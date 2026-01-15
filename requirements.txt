@@ -1,0 +1,3 @@
+irsdk
+requests
+urllib3
