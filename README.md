@@ -46,14 +46,18 @@ Hardened scripts designed for deployment on the pit wall or MTC data center.
 
 **Execution:**
 
-1. **Start the Service:**  
+1. **Start the Service:**
+
    ```python demo/production\_validator\_service\_v2.py```
 
-   *Note: Update SPLUNK\_HEC\_TOKEN in the script before running.*  
-2. **Start the Bridge:**  
+   *Note: Update SPLUNK\_HEC\_TOKEN in the script before running.*
+   
+3. **Start the Bridge:**  
+
    ```python demo/iracing\_feed.py```
 
-3. **(Optional) Start Ghost Car:**  
+5. **(Optional) Start Ghost Car:**  
+
    ```python demo/ghost\_piastri.py```
 
 ## **🛡️ License & Certification**
