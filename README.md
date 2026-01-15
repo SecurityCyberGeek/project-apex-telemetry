@@ -12,7 +12,7 @@ The system pipelines high-frequency physics telemetry (60Hz) directly into **Spl
 
 **Proof of Concept:** Real-time detection of a critical aerodynamic instability event at 250 KPH.
 
-[![Project Apex Demo](img.youtube.com/vi/4t1N5uW8Gqk/maxresdefault.jpg)](https://www.youtube.com/watch?v=4t1N5uW8Gqk)
+[![Project Apex Demo](https://img.youtube.com/vi/4t1N5uW8Gqk/maxresdefault.jpg)](https://youtu.be/4t1N5uW8Gqk)
 
 ## **3.0 System Architecture**
 
