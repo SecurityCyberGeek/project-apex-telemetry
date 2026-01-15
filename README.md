@@ -1,11 +1,11 @@
 # **Project Apex: F1 2026 Telemetry Validation Engine**
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+==============================================================================================================================================================================================================
 > **Author:** Timothy D. Harmon, CISSP
 > **Copyright:** © 2026 Timothy D. Harmon, CISSP. All Rights Reserved.
 > **Status:** Portfolio Technical Demonstration.
 
 **NOTICE:** This codebase is a conceptual prototype designed specifically for the F1 2026 Regulatory Environment. While open for review, it is not authorized for commercial redistribution or uncredited use.
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+==============================================================================================================================================================================================================
 **Project Apex** is a physics-based validation system designed to solve the "Cold Start" data challenge presented by the 2026 Formula 1 regulations. With historical data rendered obsolete, this system treats the Simulator as the "Ground Truth," validating active aero performance constraints in real-time before the physical chassis undergoes shakedown.
 
 ## **🏁 Mission Architecture**
