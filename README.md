@@ -1,5 +1,5 @@
 # **Project Apex: F1 2026 Telemetry Validation Engine**
-==============================================================================================================================================================================================================
+
 > **Author:** Timothy D. Harmon, CISSP
 > **Copyright:** © 2026 Timothy D. Harmon, CISSP. All Rights Reserved.
 > **Status:** Portfolio Technical Demonstration.
