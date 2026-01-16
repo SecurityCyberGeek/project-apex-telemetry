@@ -24,24 +24,24 @@ The system pipelines high-frequency physics telemetry (60Hz) directly into **Spl
 The solution utilizes a modular **Adapter Pattern**. The logic core remains constant, while the ingestion layer is hot-swappable between Simulation (Dev) and Track (Prod) environments.
 
 ```mermaid
-graph LR  
-    subgraph Data Sources  
-    A\[Simulator / iRacing\] \-.-\>|UDP 60Hz| B(Ingestion Bridge)  
-    A2\[MTC Telemetry Bus\] \-.-\>|Kafka / ATLAS| B  
-    end  
-      
-    subgraph Logic Core  
-    B \--\>|JSON Serialization| C{Physics Validator}  
-    C \--\>|Energy Calculation| D\[Constraint Engine\]  
-    end  
-      
-    subgraph Mission Control  
-    D \--\>|Critical Alerts| E((Splunk HEC))  
-    E \--\>|Real-Time| F\[Dashboard Visualization\]  
-    end  
-      
-    style A fill:\#f9f,stroke:\#333,stroke-width:2px  
-    style E fill:\#FF8000,stroke:\#333,stroke-width:2px,color:\#fff
+graph LR
+    subgraph "Data Sources"
+    A["Simulator / iRacing"] -->|"UDP 60Hz"| B("Ingestion Bridge")
+    A2["MTC Telemetry Bus"] -.->|"Kafka / ATLAS"| B
+    end
+    
+    subgraph "Logic Core"
+    B -->|"JSON Serialization"| C{"Physics Validator"}
+    C -->|"Energy Calculation"| D["Constraint Engine"]
+    end
+    
+    subgraph "Mission Control"
+    D -->|"Critical Alerts"| E(("Splunk HEC"))
+    E -->|"Real-Time"| F["Dashboard Visualization"]
+    end
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style E fill:#FF8000,stroke:#333,stroke-width:2px,color:#fff
 ```
 
 ### **3.1 Production Core (/src)**
