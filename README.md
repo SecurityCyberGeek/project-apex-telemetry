@@ -26,7 +26,7 @@ The solution utilizes a modular **Adapter Pattern**. The logic core remains cons
 ```mermaid
 graph LR  
     subgraph Data Sources  
-    A\[Simulator / iRacing\] \--\>|UDP 60Hz| B(Ingestion Bridge)  
+    A\[Simulator / iRacing\] \-.-\>|UDP 60Hz| B(Ingestion Bridge)  
     A2\[MTC Telemetry Bus\] \-.-\>|Kafka / ATLAS| B  
     end  
       
