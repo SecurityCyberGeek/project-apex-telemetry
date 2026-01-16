@@ -16,26 +16,53 @@ The system pipelines high-frequency physics telemetry (60Hz) directly into **Spl
 
 ## **3.0 System Architecture**
 
+# Project Apex: Telemetry Validation Engine (v1.0)
+
+![Status](https://img.shields.io/badge/Status-Deployment%20Ready-success?style=for-the-badge)
+![Target](https://img.shields.io/badge/Target-F1%202026%20Regulations-orange?style=for-the-badge)
+![Stack](https://img.shields.io/badge/Tech-Python%20%7C%20Splunk%20HEC%20%7C%20UDP-blue?style=for-the-badge)
+![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=for-the-badge)
+
+> **Strategic Objective:** Resolve the 2026 "Cold Start" data challenge by benchmarking synthetic physics baselines against active aero regulation constraints prior to physical track testing.
+
+---
+
+## 1. Executive Summary
+The 2026 regulatory reset renders historical vehicle telemetry obsolete, creating a critical data validation gap prior to the MCL40 physical launch. **Project Apex** bridges this gap by utilizing the Simulation environment as the "Ground Truth."
+
+The system pipelines high-frequency physics telemetry (60Hz) directly into **Splunk Enterprise** via the HTTP Event Collector (HEC). This enables a real-time "Mission Control" environment to validate ride-height stability and detect oscillation (porpoising) anomalies with sub-second latency.
+
+## 2. Technical Demonstration
+**Proof of Concept:** Real-time detection of a critical aerodynamic instability event at 250 KPH.
+
+[![Project Apex Demo](https://img.youtube.com/vi/YOUR_VIDEO_ID_HERE/maxresdefault.jpg)]([INSERT YOUR YOUTUBE VIDEO LINK HERE])
+
+---
+
+## 3. System Architecture
+
 The solution utilizes a modular **Adapter Pattern**. The logic core remains constant, while the ingestion layer is hot-swappable between Simulation (Dev) and Track (Prod) environments.
 
-graph LR  
-    subgraph Data Sources  
-    A\[Simulator / iRacing\] \--\>|UDP 60Hz| B(Ingestion Bridge)  
-    A2\[MTC Telemetry Bus\] \-.-\>|Kafka / ATLAS| B  
-    end  
-      
-    subgraph Logic Core  
-    B \--\>|JSON Serialization| C{Physics Validator}  
-    C \--\>|Energy Calculation| D\[Constraint Engine\]  
-    end  
-      
-    subgraph Mission Control  
-    D \--\>|Critical Alerts| E((Splunk HEC))  
-    E \--\>|Real-Time| F\[Dashboard Visualization\]  
-    end  
-      
-    style A fill:\#f9f,stroke:\#333,stroke-width:2px  
-    style E fill:\#FF8000,stroke:\#333,stroke-width:2px,color:\#fff
+```mermaid
+graph LR
+    subgraph Data Sources
+    A[Simulator / iRacing] -->|UDP 60Hz| B(Ingestion Bridge)
+    A2[MTC Telemetry Bus] -.->|Kafka / ATLAS| B
+    end
+    
+    subgraph Logic Core
+    B -->|JSON Serialization| C{Physics Validator}
+    C -->|Energy Calculation| D[Constraint Engine]
+    end
+    
+    subgraph Mission Control
+    D -->|Critical Alerts| E((Splunk HEC))
+    E -->|Real-Time| F[Dashboard Visualization]
+    end
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style E fill:#FF8000,stroke:#333,stroke-width:2px,color:#fff
+```
 
 ### **3.1 Production Core (/src)**
 
