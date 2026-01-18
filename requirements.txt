@@ -1,4 +1,3 @@
-irsdk
-requests
-urllib3
-
+requests>=2.31.0
+irsdk>=1.2.5
+urllib3>=2.0.0
