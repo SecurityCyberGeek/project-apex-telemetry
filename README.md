@@ -65,6 +65,11 @@ graph LR
   * **Capabilities:** Head-to-Head Telemetry, Real-Time Porpoising Detection, and Historical Replay.  
   * **Tech:** Utilizes robust Regex extraction to handle nested JSON payloads from HEC with sub-second latency.
 
+### **3.4 R&D: Lattice-Boltzmann Solver (`/research`)**
+To validate the transient flow logic used by enterprise CFD tools (such as SimScale's Pacefish), I developed a simple **LBM Solver in Python**.
+* **Method:** D2Q9 Lattice structure.
+* **Purpose:** Investigating wake separation behavior at the micro-scale to better understand the "Collision-Stream" cycle used in large-scale aerodynamic analysis.
+
 ## **4.0 Deployment Protocol**
 
 ### **4.1 Prerequisites**
