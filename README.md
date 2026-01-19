@@ -118,3 +118,6 @@ Licensed under the Apache 2.0 License.
 * **SCCA Operations Volunteer**
 
 *Built for the 2026 Era.*
+
+### **⚠️ Engineering Note: AOM Proxy**
+*For the purpose of this simulation-based demonstration, **Vertical Kinetic Energy (Joules)** is used as a proxy for the FIA's official **Aerodynamic Oscillation Metric (AOM)**. While the FIA metric relies on spectral analysis of vertical acceleration ($G_z$), the Kinetic Energy model provides a clearer real-time visualization of floor-to-track impact severity for the "Cold Start" use case.*
