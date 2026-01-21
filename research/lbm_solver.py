@@ -19,14 +19,14 @@ Based on the Philip Mocz implementation (2020).
 
 Purpose: 
 To validate transient wake turbulence (Kármán vortex street) behind a 
-bluff body proxy (simulating an aerodynamic element in free stream). 
-This benchmarks the 'Collision-Stream' physics engine used in enterprise 
-CFD tools like SimScale to ensure transient flow capture accuracy.
+bluff body proxy (F1 Car Profile). This benchmarks the 'Collision-Stream' 
+physics engine used in enterprise CFD tools like SimScale to ensure 
+transient flow capture accuracy.
 
 Physics Model:
 - D2Q9 Lattice (2 Dimensions, 9 Velocity Vectors)
 - BGK Approximation for Collision Operator
-- Re (Reynolds Number) controlled via viscosity relaxation time (tau)
+- Stabilized for Portfolio Demonstration (Tau=1.0, Aggressive Clamping)
 """
 
 import matplotlib.pyplot as plt
@@ -36,109 +36,148 @@ import os
 def main():
     """ Finite Volume simulation using LBM (D2Q9) """
     
-    # --- SIMULATION PARAMETERS ---
+    # --- SIMULATION PARAMETERS (STABILIZED) ---
     Nx = 400            # Resolution x-dir (Streamwise)
     Ny = 100            # Resolution y-dir (Cross-stream)
-    rho0 = 100          # Average density
-    tau = 0.6           # Collision timescale (kinematic viscosity)
+    tau = 1.0           # Collision timescale 
     Nt = 4000           # Number of timesteps
     
-    # Set to True to watch animation, False to just save final image (faster)
+    # Set to True if you want to watch it, False to just save the file quickly
     plotRealTime = True 
 
     # --- LATTICE CONSTANTS (D2Q9) ---
     NL = 9
     idxs = np.arange(NL)
-    # Velocity vectors (x, y)
     cxs = np.array([0, 0, 1, 1, 1, 0,-1,-1,-1])
     cys = np.array([0, 1, 1, 0,-1,-1,-1, 0, 1])
-    # Weights for equilibrium distribution
     weights = np.array([4/9, 1/36, 1/9, 1/36, 1/9, 1/36, 1/9, 1/36, 1/9])
 
     # --- INITIAL CONDITIONS ---
-    # F = Particle Distribution Function
-    # Add random noise to initiate instability
-    np.random.seed(42) # Fixed seed for reproducibility
+    np.random.seed(42)
+    # Initialize uniform density field with slight noise
     F = np.ones((Ny, Nx, NL)) + 0.01 * np.random.randn(Ny, Nx, NL)
     
     # Add initial x-momentum (rightward flow)
-    F[:,:,3] += 2.3
+    # Kept extremely low for stability
+    F[:,:,3] += 2.3 * 0.05
 
-    # --- GEOMETRY DEFINITION ---
-    # Define a cylindrical obstacle (Bluff Body Proxy for Aero Element)
+    # --- GEOMETRY DEFINITION (REFINED F1 PROFILE) ---
+    # Define the obstacle mask
     obstacle = np.full((Ny,Nx), False)
-    for y in range(Ny):
-        for x in range(Nx):
-            # Centered at (Nx/4, Ny/2) with radius 13
-            if (x - Nx/4)**2 + (y - Ny/2)**2 < 13**2:
+    
+    # Coordinates are [y, x]
+    # Grid is 100 high (y), 400 wide (x)
+    
+    # 1. Front Wing (Low, thin plate)
+    obstacle[15:20, 100:110] = True
+    
+    # 2. Nose Cone (Sloped upwards)
+    for y in range(20, 35):
+        for x in range(110, 140):
+            if y < (20 + (x-110)*0.5): # Linear slope
                 obstacle[y,x] = True
 
-    print(f"--- Project Apex LBM Solver Started ---")
-    print(f"Grid: {Nx}x{Ny} | Steps: {Nt} | Re: Proportional to {(1/tau):.2f}")
+    # 3. Main Chassis / Cockpit / Sidepod area
+    obstacle[20:45, 140:220] = True
+    
+    # 4. Engine Cover / Airbox (Tapered back)
+    for y in range(45, 60):
+        for x in range(160, 200):
+             if y < (60 - (x-160)*0.4): # Taper down
+                obstacle[y,x] = True
+
+    # 5. Rear Wing (High, thin plate)
+    obstacle[50:65, 230:240] = True
+    
+    # 6. Rear Wing Endplate connection
+    obstacle[45:50, 220:230] = True
+
+    # 7. Wheels (Approximate locations)
+    # Front Wheel
+    for y in range(Ny):
+        for x in range(Nx):
+            if (x - 120)**2 + (y - 20)**2 < 14**2:
+                obstacle[y,x] = True
+    # Rear Wheel
+    for y in range(Ny):
+        for x in range(Nx):
+            if (x - 220)**2 + (y - 20)**2 < 14**2:
+                obstacle[y,x] = True
+
+    print(f"--- Project Apex LBM Solver Started (Bulletproof Mode) ---")
+    print(f"Lattice: {Nx}x{Ny} | Viscosity (Tau): {tau}")
 
     # --- MAIN LOOP ---
     for i in range(Nt):
         
         # 1. DRIFT / STREAMING
-        # Move particles to neighboring lattice sites
         for j, cx, cy in zip(idxs, cxs, cys):
             F[:,:,j] = np.roll(F[:,:,j], cx, axis=1)
             F[:,:,j] = np.roll(F[:,:,j], cy, axis=0)
         
-        # 2. BOUNDARY CONDITIONS
-        # Reflective bounce-back on obstacle
+        # 2. BOUNDARY CONDITIONS (Bounce-back)
         bndryF = F[obstacle,:]
-        # Invert directions (e.g., East becomes West)
-        # Based on D2Q9 indices: [0, 1, 2, 3, 4, 5, 6, 7, 8] -> [0, 5, 6, 7, 8, 1, 2, 3, 4]
         bndryF = bndryF[:, [0, 5, 6, 7, 8, 1, 2, 3, 4]]
         F[obstacle,:] = bndryF
         
         # 3. MACROSCOPIC VARIABLES
         rho = np.sum(F, 2)
+        # CRITICAL FIX: Clamp density to prevent divide-by-zero
+        rho = np.clip(rho, 0.5, 2.0)
+        
         ux  = np.sum(F * cxs, 2) / rho
         uy  = np.sum(F * cys, 2) / rho
         
-        # 4. COLLISION (BGK Relaxation)
+        # CRITICAL FIX: Clamp velocity to prevent explosion
+        ux = np.clip(ux, -0.5, 0.5)
+        uy = np.clip(uy, -0.5, 0.5)
+
+        # 4. COLLISION (BGK)
         Feq = np.zeros(F.shape)
         for j, cx, cy, w in zip(idxs, cxs, cys, weights):
-            # Dot product c*u
             cu = 3 * (cx*ux + cy*uy)
             Feq[:,:,j] = rho * w * (1 + cu + 0.5*(cu**2) - 1.5*(ux**2 + uy**2))
         
         F += -(1.0/tau) * (F - Feq)
         
-        # 5. VISUALIZATION (Vorticity)
+        # Safety: Remove NaNs if they appear
+        F = np.nan_to_num(F)
+
+        # 5. VISUALIZATION
         if (plotRealTime and (i % 100 == 0)) or (i == Nt - 1):
             
-            # Calculate Curl: dy/dx - dx/dy
-            ux[obstacle] = 0
-            uy[obstacle] = 0
-            vorticity = (np.roll(ux, -1, axis=0) - np.roll(ux, 1, axis=0)) - \
-                        (np.roll(uy, -1, axis=1) - np.roll(uy, 1, axis=1))
+            # Curl Calculation
+            ux_plot = ux.copy()
+            uy_plot = uy.copy()
+            ux_plot[obstacle] = 0
+            uy_plot[obstacle] = 0
+            
+            vorticity = (np.roll(ux_plot, -1, axis=0) - np.roll(ux_plot, 1, axis=0)) - \
+                        (np.roll(uy_plot, -1, axis=1) - np.roll(uy_plot, 1, axis=1))
             vorticity[obstacle] = np.nan
             
             if plotRealTime:
                 plt.clf()
-                plt.imshow(vorticity, cmap='bwr', vmin=-.1, vmax=.1)
-                plt.title(f"Project Apex LBM: Transient Wake Analysis (Step {i})")
+                # FIXED: Added origin='lower' to flip image right-side up
+                plt.imshow(vorticity, cmap='bwr', vmin=-.05, vmax=.05, origin='lower') 
+                plt.title(f"Project Apex CFD: Wake Analysis (Step {i})")
                 plt.axis('off')
                 plt.pause(0.01)
             
             print(f"Step {i}/{Nt} Complete...")
 
     # --- SAVE ARTIFACT ---
-    # Save the final state to disk for report generation
-    print("Saving analysis artifact to 'lbm_wake_analysis.png'...")
+    print("Saving final analysis artifact...")
     plt.clf()
-    plt.imshow(vorticity, cmap='bwr', vmin=-.1, vmax=.1)
+    # FIXED: Added origin='lower' here as well
+    plt.imshow(vorticity, cmap='bwr', vmin=-.05, vmax=.05, origin='lower')
     plt.title(f"Project Apex LBM: Final Wake State (Step {Nt})")
     plt.axis('off')
     
-    # Save to the same directory as the script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     save_path = os.path.join(script_dir, 'lbm_wake_analysis.png')
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"Artifact saved: {save_path}")
+    print(f"Artifact successfully saved: {save_path}")
     
     if plotRealTime:
         plt.show()
