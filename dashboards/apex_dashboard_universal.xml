@@ -1,21 +1,33 @@
 <dashboard version="1.1" theme="dark">
   <label>Project Apex: Mission Control (Dual Telemetry)</label>
-  <description>Live Telemetry Validation // Car: MCL60-Sim // Track: Silverstone</description>
+  <description>Pre-Season Shakedown // Car: MCL40-Proto // Track: Barcelona-Catalunya</description>
   
+  <!-- TIME PICKER INPUT (RESTORED) -->
+  <fieldset submitButton="false" autoRun="true">
+    <input type="time" token="global_time" searchWhenChanged="true">
+      <label>Time Range</label>
+      <default>
+        <earliest>rt-30s</earliest>
+        <latest>rt</latest>
+      </default>
+    </input>
+  </fieldset>
+
   <!-- ROW 1: HEADS UP DISPLAY -->
   <row>
     <panel>
       <title>Aero Stability Status (System)</title>
       <single>
         <search>
-          <!-- QUERY: Finds "status" field in raw text -->
-          <query>index=* "ProjectApex" 
-| rex field=_raw "\"status\"\s*:\s*\"(?&lt;status&gt;[^\"]+)\"" 
+          <!-- FIXED: Handles multivalue status to prevent "Two Stable Statuses" error -->
+          <query>index=* sourcetype="_json" 
+| spath 
+| eval status=mvindex(coalesce(status, 'event.status'), 0) 
 | stats latest(status) as status 
 | eval status_color=if(status=="STABLE", "OK", "CRITICAL") 
 | table status</query>
-          <earliest>rt-30s</earliest>
-          <latest>rt</latest>
+          <earliest>$global_time.earliest$</earliest>
+          <latest>$global_time.latest$</latest>
           <refresh>1s</refresh>
         </search>
         <option name="colorMode">block</option>
@@ -30,18 +42,21 @@
     
     <panel>
       <title>Live Speed (Head-to-Head)</title>
-      <!-- LANDO'S GAUGE (CAR_1) -->
+      <!-- LANDO'S GAUGE -->
       <single>
          <title>Lando (CAR_1)</title>
          <search>
-          <!-- QUERY: Regex extraction for CAR_1 Speed -->
-          <query>index=* "ProjectApex" "CAR_1"
-| rex field=_raw "\"speed_kph\"\s*:\s*(?&lt;speed_kph&gt;[\d\.]+)" 
+          <!-- FIXED: Extracts first value -> converts to number -> rounds -->
+          <query>index=* "CAR_1" 
+| spath 
+| eval car_id=mvindex(coalesce(car_id, 'event.car_id'), 0) 
+| eval speed_kph=mvindex(coalesce(speed_kph, 'event.speed_kph'), 0) 
+| search car_id="CAR_1" 
 | eval speed_kph=round(tonumber(speed_kph), 0) 
 | stats latest(speed_kph) as speed_kph 
 | table speed_kph</query>
-          <earliest>rt-5s</earliest>
-          <latest>rt</latest>
+          <earliest>$global_time.earliest$</earliest>
+          <latest>$global_time.latest$</latest>
           <refresh>1s</refresh>
         </search>
         <option name="numberPrecision">0</option>
@@ -51,18 +66,20 @@
         <option name="height">150</option>
       </single>
       
-      <!-- OSCAR'S GAUGE (CAR_81) -->
+      <!-- OSCAR'S GAUGE -->
       <single>
          <title>Oscar (CAR_81)</title>
          <search>
-          <!-- QUERY: Regex extraction for CAR_81 Speed -->
-          <query>index=* "ProjectApex" "CAR_81"
-| rex field=_raw "\"speed_kph\"\s*:\s*(?&lt;speed_kph&gt;[\d\.]+)" 
+          <query>index=* "CAR_81" 
+| spath 
+| eval car_id=mvindex(coalesce(car_id, 'event.car_id'), 0) 
+| eval speed_kph=mvindex(coalesce(speed_kph, 'event.speed_kph'), 0) 
+| search car_id="CAR_81" 
 | eval speed_kph=round(tonumber(speed_kph), 0) 
 | stats latest(speed_kph) as speed_kph 
 | table speed_kph</query>
-          <earliest>rt-5s</earliest>
-          <latest>rt</latest>
+          <earliest>$global_time.earliest$</earliest>
+          <latest>$global_time.latest$</latest>
           <refresh>1s</refresh>
         </search>
         <option name="numberPrecision">0</option>
@@ -77,13 +94,13 @@
       <title>Current Oscillation Energy</title>
       <chart>
         <search>
-          <!-- QUERY: Regex extraction for energy -->
-          <query>index=* "ProjectApex" 
-| rex field=_raw "\"oscillation_energy\"\s*:\s*(?&lt;oscillation_energy&gt;[\d\.]+)" 
+          <query>index=* sourcetype="_json" 
+| spath 
+| eval oscillation_energy=mvindex(coalesce(oscillation_energy, 'event.oscillation_energy'), 0) 
 | eval energy=tonumber(oscillation_energy) 
 | stats max(energy) as energy</query>
-          <earliest>rt-5s</earliest>
-          <latest>rt</latest>
+          <earliest>$global_time.earliest$</earliest>
+          <latest>$global_time.latest$</latest>
           <refresh>1s</refresh>
         </search>
         <option name="charting.chart">radialGauge</option>
@@ -101,14 +118,17 @@
       <title>Porpoising Detector (Energy > 100J = Violation)</title>
       <chart>
         <search>
-          <!-- QUERY: Graph Lando's Oscillation Energy over time -->
-          <query>index=* "ProjectApex" "CAR_1"
-| rex field=_raw "\"oscillation_energy\"\s*:\s*(?&lt;oscillation_energy&gt;[\d\.]+)" 
+          <!-- FIXED: Filters for CAR_1 and cleans data for charting -->
+          <query>index=* "CAR_1" 
+| spath 
+| eval car_id=mvindex(coalesce(car_id, 'event.car_id'), 0) 
+| eval oscillation_energy=mvindex(coalesce(oscillation_energy, 'event.oscillation_energy'), 0) 
+| search car_id="CAR_1" 
 | eval oscillation_energy=tonumber(oscillation_energy) 
 | timechart span=250ms max(oscillation_energy) as "Vertical Energy" 
 | eval Threshold=100</query>
-          <earliest>rt-1m</earliest>
-          <latest>rt</latest>
+          <earliest>$global_time.earliest$</earliest>
+          <latest>$global_time.latest$</latest>
           <refresh>1s</refresh>
         </search>
         <option name="charting.chart">area</option>
@@ -128,19 +148,20 @@
       <title>Live Event Stream (All Data)</title>
       <table>
         <search>
-          <!-- QUERY: Robust Regex extraction for table population -->
-          <query>index=* "ProjectApex" 
-| rex field=_raw "\"car_id\"\s*:\s*\"(?&lt;car_id&gt;[^\"]+)\"" 
-| rex field=_raw "\"speed_kph\"\s*:\s*(?&lt;speed_kph&gt;[\d\.]+)" 
-| rex field=_raw "\"oscillation_energy\"\s*:\s*(?&lt;oscillation_energy&gt;[\d\.]+)" 
-| rex field=_raw "\"message\"\s*:\s*\"(?&lt;message&gt;[^\"]+)\"" 
+          <!-- FIXED: Handles multivalue fields to ensure table columns populate -->
+          <query>index=* sourcetype="_json" 
+| spath 
+| eval car_id=mvindex(coalesce(car_id, 'event.car_id'), 0) 
+| eval speed_kph=mvindex(coalesce(speed_kph, 'event.speed_kph'), 0) 
+| eval oscillation_energy=mvindex(coalesce(oscillation_energy, 'event.oscillation_energy'), 0) 
+| eval message=mvindex(coalesce(message, 'event.message'), 0) 
 | eval speed_kph=round(tonumber(speed_kph), 0) 
 | eval oscillation_energy=round(tonumber(oscillation_energy), 2) 
-| table _time, car_id, speed_kph, oscillation_energy, message 
+| table _time, source, car_id, speed_kph, oscillation_energy, message 
 | rename oscillation_energy as "Energy (J)", speed_kph as "Speed (KPH)" 
 | sort -_time</query>
-          <earliest>rt-5m</earliest>
-          <latest>rt</latest>
+          <earliest>$global_time.earliest$</earliest>
+          <latest>$global_time.latest$</latest>
         </search>
         <option name="count">10</option>
         <option name="drilldown">none</option>
