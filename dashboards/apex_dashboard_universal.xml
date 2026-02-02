@@ -1,18 +1,7 @@
 <dashboard version="1.1" theme="dark">
   <label>Project Apex: Mission Control (Dual Telemetry)</label>
-  <description>Pre-Season Shakedown // Car: MCL40-Proto // Track: Barcelona-Catalunya</description>
+  <description>Live Telemetry Validation // Car: MCL60-Sim // Track: Silverstone</description>
   
-  <!-- TIME PICKER INPUT (RESTORED) -->
-  <fieldset submitButton="false" autoRun="true">
-    <input type="time" token="global_time" searchWhenChanged="true">
-      <label>Time Range</label>
-      <default>
-        <earliest>rt-30s</earliest>
-        <latest>rt</latest>
-      </default>
-    </input>
-  </fieldset>
-
   <!-- ROW 1: HEADS UP DISPLAY -->
   <row>
     <panel>
@@ -26,8 +15,8 @@
 | stats latest(status) as status 
 | eval status_color=if(status=="STABLE", "OK", "CRITICAL") 
 | table status</query>
-          <earliest>$global_time.earliest$</earliest>
-          <latest>$global_time.latest$</latest>
+          <earliest>rt-30s</earliest>
+          <latest>rt</latest>
           <refresh>1s</refresh>
         </search>
         <option name="colorMode">block</option>
@@ -53,14 +42,18 @@
 | eval speed_kph=mvindex(coalesce(speed_kph, 'event.speed_kph'), 0) 
 | search car_id="CAR_1" 
 | eval speed_kph=round(tonumber(speed_kph), 0) 
-| stats latest(speed_kph) as speed_kph 
+| stats latest(speed_kph) as speed_kph latest(status) as status 
+| eval range=if(status=="CRITICAL", 1000, 0)
 | table speed_kph</query>
-          <earliest>$global_time.earliest$</earliest>
-          <latest>$global_time.latest$</latest>
+          <earliest>rt-5s</earliest>
+          <latest>rt</latest>
           <refresh>1s</refresh>
         </search>
         <option name="numberPrecision">0</option>
-        <option name="colorMode">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[500]</option>
+        <option name="useColors">1</option>
         <option name="underLabel">KPH</option>
         <option name="showSparkline">0</option>
         <option name="height">150</option>
@@ -76,14 +69,18 @@
 | eval speed_kph=mvindex(coalesce(speed_kph, 'event.speed_kph'), 0) 
 | search car_id="CAR_81" 
 | eval speed_kph=round(tonumber(speed_kph), 0) 
-| stats latest(speed_kph) as speed_kph 
+| stats latest(speed_kph) as speed_kph latest(status) as status 
+| eval range=if(status=="CRITICAL", 1000, 0)
 | table speed_kph</query>
-          <earliest>$global_time.earliest$</earliest>
-          <latest>$global_time.latest$</latest>
+          <earliest>rt-5s</earliest>
+          <latest>rt</latest>
           <refresh>1s</refresh>
         </search>
         <option name="numberPrecision">0</option>
-        <option name="colorMode">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[500]</option>
+        <option name="useColors">1</option>
         <option name="underLabel">KPH</option>
         <option name="showSparkline">0</option>
         <option name="height">150</option>
@@ -99,8 +96,8 @@
 | eval oscillation_energy=mvindex(coalesce(oscillation_energy, 'event.oscillation_energy'), 0) 
 | eval energy=tonumber(oscillation_energy) 
 | stats max(energy) as energy</query>
-          <earliest>$global_time.earliest$</earliest>
-          <latest>$global_time.latest$</latest>
+          <earliest>rt-5s</earliest>
+          <latest>rt</latest>
           <refresh>1s</refresh>
         </search>
         <option name="charting.chart">radialGauge</option>
@@ -127,8 +124,8 @@
 | eval oscillation_energy=tonumber(oscillation_energy) 
 | timechart span=250ms max(oscillation_energy) as "Vertical Energy" 
 | eval Threshold=100</query>
-          <earliest>$global_time.earliest$</earliest>
-          <latest>$global_time.latest$</latest>
+          <earliest>rt-1m</earliest>
+          <latest>rt</latest>
           <refresh>1s</refresh>
         </search>
         <option name="charting.chart">area</option>
@@ -160,8 +157,8 @@
 | table _time, source, car_id, speed_kph, oscillation_energy, message 
 | rename oscillation_energy as "Energy (J)", speed_kph as "Speed (KPH)" 
 | sort -_time</query>
-          <earliest>$global_time.earliest$</earliest>
-          <latest>$global_time.latest$</latest>
+          <earliest>rt-5m</earliest>
+          <latest>rt</latest>
         </search>
         <option name="count">10</option>
         <option name="drilldown">none</option>
