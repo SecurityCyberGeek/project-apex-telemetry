@@ -94,12 +94,14 @@ Monitor standard output for the initiation handshake:
 
 **Digital Twin Validation (Shadow Mode):** Watch the 90-second Tech Demo visualizing the oscillation logic in action.
 
+[![Project Apex Demo](https://img.youtube.com/vi/4t1N5uW8Gqk/0.jpg)](https://youtu.be/4t1N5uW8Gqk)
+
 ## **👤 Author**
 
 **Timothy D. Harmon, CISSP**
 
 * **Role:** Senior Active Aero Validation Engineer (Proposed)  
 * **Specialty:** Telemetry Data Analysis & Systems Security  
-* **Credential:** Cisco Insider Champion | SMMC Marshal
+* **Credential:** Cisco Insider Champion | BMMC Marshal
 
 *Built on the **Splunk Operational Intelligence** platform.*
