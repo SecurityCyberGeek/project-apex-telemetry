@@ -54,14 +54,15 @@ graph LR
 * **Compute:** Python 3.10 Service running on Cisco Edge / Local Server.  
 * **Visualization:** Splunk Enterprise (Dark Mode Mission Control).
 
-## **📂 Project Structure**
+## 📂 Project Structure
 
-| File | Purpose |
-| :---- | :---- |
-| **production\_validator\_service\_prod.py** | **\[PRODUCTION\]** The main Edge Logic. Listens for live car data, applies the 100J/Thermal logic, and transmits to Splunk. |
-| **mission\_control\_dashboard.xml** | **\[UI\]** The Splunk XML definition for the dashboard, including the "Ghost Panel" for thermal alerts. |
-| **requirements.txt** | Dependency manifest for the Python environment. |
-| **simulation\_tools/** | *Folder containing production\_atlas\_bridge.py for "Digital Twin" validation and head-to-head simulations.* |
+| Directory | Contents | Description |
+| :--- | :--- | :--- |
+| **`src/`** | `production_validator_service_prod.py` | **[PRODUCTION CORE]** The hardened Edge Validator service. This is the only code deployed to the MTC/Trackside server. |
+| **`dashboards/`** | `mission_control_dashboard.xml` | **[VISUALIZATION]** Splunk XML definitions for the Mission Control interface, including the "Ghost Panel" logic. |
+| **`demo/`** | `production_atlas_bridge.py`, `iracing_feed.py` | **[SIMULATION]** Digital Twin bridges and test harnesses used to generate synthetic "Head-to-Head" telemetry for demos. |
+| **`research/`** | `lbm_solver.py`, `wake_analysis.png` | **[R&D]** Python-based Lattice-Boltzmann Method (LBM) solver used to verify transient wake separation physics. |
+| **`Root`** | `requirements.txt`, `SECURITY.md` | Dependency manifests and CISSP security policy documentation. |
 
 ## **🚀 Deployment Guide (MTC/Trackside)**
 
