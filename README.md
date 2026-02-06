@@ -31,24 +31,19 @@ Crucially, **v2.0** introduces specific logic to detect **Thermally-Induced Aero
 
 The system follows a decoupled **Edge Compute** architecture designed for the MTC Network:
 
-'''mermaid
-graph LR  
-        subgraph "Trackside / MTC Edge"  
-        A\[ATLAS Forwarder\] \--\>|"UDP (60Hz)"| B(Edge Validator Service)  
-        end
-    
-    subgraph "Logic Core"  
-    B \--\>|"Thermal Check (\>105C)"| C{Compliance Gate}  
-    C \--\>|"Stable"| D\[Discard/Log\]  
-    C \--\>|"Violation (\>100J)"| E\[Splunk HEC\]  
-    end  
-      
-    subgraph "Mission Control"  
-    E \--\>|"HTTPS (JSON)"| F\[Dashboard Visualization\]  
+graph LR
+    subgraph "Data Sources"
+    A["ATLAS Forwarder"] -->|"UDP 60Hz"| B("Edge Validator Service")
     end
-
-    style E fill:\#FF8000,stroke:\#333,stroke-width:2px,color:\#fff
-'''
+    subgraph "Logic Core"
+    B -->|"Thermal Check (>105C)"| C{"Compliance Gate"}
+    C -->|"Stable"| D["Discard/Log"]
+    C -->|"Violation (>100J)"| E(("Splunk HEC"))
+    end
+    subgraph "Mission Control"
+    E -->|"HTTPS (JSON)"| F["Dashboard Visualization"]
+    end
+    style E fill:#FF8000,stroke:#333,stroke-width:2px,color:#fff
 
 * **Ingest:** Raw UDP Stream from ATLAS (Trackside/MTC).  
 * **Compute:** Python 3.10 Service running on Cisco Edge / Local Server.  
