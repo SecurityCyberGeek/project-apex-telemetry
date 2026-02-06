@@ -1,130 +1,97 @@
-# **Project Apex: Telemetry Validation Engine (v1.0)**
+# **Project Apex: MCL40 Active Aero Validation Engine**
 
-![Status](https://img.shields.io/badge/Status-Deployment%20Ready-success?style=for-the-badge)
-![Target](https://img.shields.io/badge/Target-F1%202026%20Regulations-orange?style=for-the-badge)
-![Stack](https://img.shields.io/badge/Tech-Python%20%7C%20Splunk%20HEC%20%7C%20UDP-blue?style=for-the-badge)
-![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=for-the-badge)
+## **🏁 Executive Summary**
 
-**Strategic Objective:** Mitigate 2026 "Cold Start" data risks by benchmarking synthetic physics baselines against active aero regulation constraints prior to physical track testing.
+**Project Apex** is a real-time telemetry validation framework engineered to solve the **"Cold Start" data challenge** for the 2026 Season. It acts as an automated logic gate between the **ATLAS** telemetry stream and **Splunk Mission Control**, validating vehicle compliance against the **FIA \>100J Vertical Oscillation Limit** in real-time.
 
-## **1.0 Executive Summary**
+Crucially, **v2.0** introduces specific logic to detect **Thermally-Induced Aero Squat** (The "Mercedes Loophole"), cross-referencing engine oil temperature with ride-height compression to identify non-linear aerodynamic instability.
 
-The 2026 regulatory reset renders historical vehicle telemetry obsolete, creating a critical validation gap prior to the MCL40 physical launch. **Project Apex** bridges this gap by utilizing the Simulation environment as the "Ground Truth."
+## **🚨 V2.0 Critical Updates (Feb 2026\)**
 
-The system pipelines high-frequency physics telemetry (60Hz) directly into **Splunk Enterprise** via the HTTP Event Collector (HEC). This enables a real-time "Mission Control" environment to validate ride-height stability and detect sub-second latency oscillation (porpoising) anomalies.
+### **1\. Thermal-Aero Coupling Logic ("The Loophole")**
 
-## **2.0 Technical Demonstration**
+* **Problem:** 2026 Engines running High-Compression maps (18:1 CR) at temps \>105°C generate excess torque, causing unmodeled rear squat (\~2mm).  
+* **Solution:** The Edge Validator now correlates Engine\_Oil\_Temp \> 105°C with Rear\_Ride\_Height drops to flag **"CRITICAL: THERMAL\_SQUAT"** events before they trigger a floor stall.
 
-**Proof of Concept:** Real-time detection of a critical aerodynamic instability event at 250 KPH.
+### **2\. CISSP Security Hardening**
 
-[![Project Apex Demo](https://img.youtube.com/vi/4t1N5uW8Gqk/0.jpg)](https://youtu.be/4t1N5uW8Gqk)
+* **Credentials:** All hardcoded API tokens have been removed. Secrets are now injected via os.getenv for secure deployment within **Cisco IOx** or **Docker** containers at the MTC.  
+* **Network:** UDP Receive Buffer increased to **1MB** to prevent packet loss during high-frequency telemetry bursts (300kph+ cornering).
 
-## **3.0 System Architecture**
+### **3\. Head-to-Head A/B Validation**
 
-The solution utilizes a modular **Adapter Pattern**. The logic core remains constant, while the ingestion layer is hot-swappable between Simulation (Dev) and Track (Prod) environments.
+* **Capability:** The pipeline now handles simultaneous streams for **CAR\_1 (Lando)** and **CAR\_81 (Oscar)**, allowing Race Engineers to benchmark experimental aero maps against a stable control group in real-time.
 
-```mermaid
-graph LR
-    subgraph "Data Sources"
-    A["Simulator / iRacing"] -->|"UDP 60Hz"| B("Ingestion Bridge")
-    A2["MTC Telemetry Bus"] -.->|"Kafka / ATLAS"| B
+## **🏗 Architecture**
+
+The system follows a decoupled **Edge Compute** architecture designed for the MTC Network:
+
+graph LR  
+    subgraph "Trackside / MTC Edge"  
+    A\[ATLAS Forwarder\] \--\>|"UDP (60Hz)"| B(Edge Validator Service)  
+    end  
+      
+    subgraph "Logic Core"  
+    B \--\>|"Thermal Check (\>105C)"| C{Compliance Gate}  
+    C \--\>|"Stable"| D\[Discard/Log\]  
+    C \--\>|"Violation (\>100J)"| E\[Splunk HEC\]  
+    end  
+      
+    subgraph "Mission Control"  
+    E \--\>|"HTTPS (JSON)"| F\[Dashboard Visualization\]  
     end
-    
-    subgraph "Logic Core"
-    B -->|"JSON Serialization"| C{"Physics Validator"}
-    C -->|"Energy Calculation"| D["Constraint Engine"]
-    end
-    
-    subgraph "Mission Control"
-    D -->|"Critical Alerts"| E(("Splunk HEC"))
-    E -->|"Real-Time"| F["Dashboard Visualization"]
-    end
-    
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style E fill:#FF8000,stroke:#333,stroke-width:2px,color:#fff
-```
 
-### **3.1 Production Core (/src)**
+    style E fill:\#FF8000,stroke:\#333,stroke-width:2px,color:\#fff
 
-*Target Environment: MTC / Pit Wall*
+* **Ingest:** Raw UDP Stream from ATLAS (Trackside/MTC).  
+* **Compute:** Python 3.10 Service running on Cisco Edge / Local Server.  
+* **Visualization:** Splunk Enterprise (Dark Mode Mission Control).
 
-* **production\_atlas\_bridge.py**: Enterprise-grade ingestor designed to interface with the proprietary ATLAS telemetry bus.  
-* **production\_validator\_service\_prod.py**: The hardened logic engine. Features SSL verification, environment-variable security, and multi-car concurrency state management.
+## **📂 Project Structure**
 
-### **3.2 Simulation Harness (/demo)**
+| File | Purpose |
+| :---- | :---- |
+| **production\_validator\_service\_prod.py** | **\[PRODUCTION\]** The main Edge Logic. Listens for live car data, applies the 100J/Thermal logic, and transmits to Splunk. |
+| **mission\_control\_dashboard.xml** | **\[UI\]** The Splunk XML definition for the dashboard, including the "Ghost Panel" for thermal alerts. |
+| **requirements.txt** | Dependency manifest for the Python environment. |
+| **simulation\_tools/** | *Folder containing production\_atlas\_bridge.py for "Digital Twin" validation and head-to-head simulations.* |
 
-*Target Environment: Local Development / iRacing*
+## **🚀 Deployment Guide (MTC/Trackside)**
 
-* **iracing\_feed.py**: A custom UDP bridge that creates a 1:1 "Digital Twin" data stream, enforcing the 2026 driver narrative (CAR\_1).  
-* **production\_validator\_service\_v3.py**: The local version of the logic core, configured for the demo environment (includes HEC throttling to prevent localhost latency).  
-* **ghost\_piastri.py**: Traffic simulator (CAR\_81) used to validate the dashboard's ability to handle multi-vehicle concurrency.
-
-### **3.3 Visualization (/dashboards)**
-
-* **apex\_dashboard\_universal.xml**: The Splunk XML source for the "Mission Control" interface.  
-  * **Capabilities:** Head-to-Head Telemetry, Real-Time Porpoising Detection, and Historical Replay.  
-  * **Tech:** Utilizes robust Regex extraction to handle nested JSON payloads from HEC with sub-second latency.
-
-### 3.4 R&D: Lattice-Boltzmann Solver (`/research`)
-
-To validate the transient flow logic used by enterprise CFD tools (such as SimScale's Pacefish), I developed a simple **LBM Solver in Python**.
-
-* **Method:** D2Q9 Lattice structure (BGK collision model).
-* **Geometry:** 2D Side-Profile of F1 Chassis (Wings, Nose, Cockpit, Wheels).
-* **Purpose:** Benchmarking transient wake separation behavior at the micro-scale to better understand the "Collision-Stream" cycle used in large-scale aerodynamic analysis.
-
-**Visualization Output:**
-![LBM Wake Analysis](research/lbm_wake_analysis.png)
-*(Generated via `research/lbm_solver.py`)*
-
-## **4.0 Deployment Protocol**
-
-### **4.1 Prerequisites**
+### **Prerequisites**
 
 * Python 3.10+ environment  
-* Splunk Enterprise (Local or Cloud) with HEC enabled (Port 8088\)  
-* iRacing Simulator (for live physics generation)
+* Network access to the ATLAS Forwarding Port (UDP 20777\)  
+* Splunk HEC Token (Injected via Environment Variable)
 
-### **4.2 Configuration**
+### **1\. Setup Environment**
 
-1. **Clone Repository:**  
-```Python
-    git clone \[https://github.com/your-username/project-apex-telemetry.git\](https://github.com/your-username/project-apex-telemetry.git)  
-   cd project-apex-telemetry
-```
+export SPLUNK\_HEC\_URL="\[https://splunk-hec.mclaren.internal:8088/services/collector\](https://splunk-hec.mclaren.internal:8088/services/collector)"  
+export SPLUNK\_TOKEN="\[SECURE\_TOKEN\_INJECTED\_BY\_IT\]"  
+export LISTEN\_PORT=20777
 
-3. **Install Dependencies:**  
-```Python
-   pip install requests irsdk
-```
+### **2\. Launch Validator Service**
 
-4. **Splunk Setup:**  
-   * Import dashboards/apex\_dashboard\_universal.xml into a new Classic Dashboard.  
-   * Generate HEC Token (Source Type: \_json).  
-   * Update the SPLUNK\_HEC\_TOKEN variable in demo/production\_validator\_service\_v2.py.
-      
-5. **Execution (Demo Mode):**  
-   \# Terminal 1: Start the Logic Core
-```Python  
-   python demo/production\_validator\_service\_v2.py
-```
+python3 production\_validator\_service\_prod.py
 
-   \# Terminal 2: Start the Simulation Bridge  
-```Python
-   python demo/iracing\_feed.py
-```
+### **3\. Verification**
 
-## **5.0 Attribution**
+Monitor standard output for the initiation handshake:
 
-Copyright © 2026 Timothy D. Harmon, CISSP  
-Licensed under the Apache 2.0 License.  
-**Author Credentials:**
+\[\*\] PROJECT APEX: LIVE VALIDATOR SERVICE STARTED ON PORT 20777
 
-* **M.A.S. Data Science and Engineering**  
-* **Motorsport UK Licensed** (RS Clubman & Esports)  
-* **SCCA Operations Volunteer**
+\[\*\] LOGIC PROFILE: MCL40\_THERMAL\_AERO\_V2
 
-*Built for the 2026 Era.*
+## **🎥 Concept Demonstration**
 
-### **⚠️ Engineering Note: AOM Proxy**
-*For the purpose of this simulation-based demonstration, **Vertical Kinetic Energy (Joules)** is used as a proxy for the FIA's official **Aerodynamic Oscillation Metric (AOM)**. While the FIA metric relies on spectral analysis of vertical acceleration ($G_z$), the Kinetic Energy model provides a clearer real-time visualization of floor-to-track impact severity for the "Cold Start" use case.*
+**Digital Twin Validation (Shadow Mode):** Watch the 90-second Tech Demo visualizing the oscillation logic in action.
+
+## **👤 Author**
+
+**Timothy D. Harmon, CISSP**
+
+* **Role:** Senior Active Aero Validation Engineer (Proposed)  
+* **Specialty:** Telemetry Data Analysis & Systems Security  
+* **Credential:** Cisco Insider Champion | SMMC Marshal
+
+*Built on the **Splunk Operational Intelligence** platform.*
