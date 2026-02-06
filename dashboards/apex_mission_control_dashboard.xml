@@ -1,0 +1,153 @@
+#  Copyright 2026 Timothy D. Harmon
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+<dashboard theme="dark">
+  <label>Project Apex: Mission Control (MCL40)</label>
+  <description>Real-Time Active Aero Validation &amp; Thermal Compliance Engine</description>
+  
+  <!-- TIME PICKER FIELDSET -->
+  <!-- OPTIMIZATION: Default set to 30s for Sector-Level Analysis -->
+  <fieldset submitButton="false">
+    <input type="time" token="time_token">
+      <label>Analysis Window</label>
+      <default>
+        <earliest>rt-30s</earliest>
+        <latest>rt</latest>
+      </default>
+    </input>
+  </fieldset>
+
+  <!-- 
+    BACKGROUND LOGIC: THERMAL THREAT SCANNER
+    Linked to $time_token$. Scans only the relevant window to improve performance.
+  -->
+  <search id="thermal_threat_scan">
+    <query>
+      index="project_apex" 
+      | stats max(engine_temp_c) as peak_temp max(vertical_energy) as peak_energy
+      | where peak_temp > 105 AND peak_energy > 80
+    </query>
+    <earliest>$time_token.earliest$</earliest>
+    <latest>$time_token.latest$</latest>
+    <done>
+      <!-- If threat found, UNHIDE the Ghost Panel -->
+      <condition match="'job.resultCount' > 0">
+        <set token="show_thermal_alert">true</set>
+      </condition>
+      <!-- If no threat, HIDE the panel -->
+      <condition>
+        <unset token="show_thermal_alert"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- ROW 1: SYSTEM STATUS & HEAD-TO-HEAD SPEED -->
+  <row>
+    <!-- PANEL 1: AGGREGATE AERO STATUS -->
+    <panel>
+      <title>Aero Platform Status</title>
+      <single>
+        <search>
+          <query>
+            index="project_apex" sourcetype="mcl_telemetry"
+            | stats max(vertical_energy) as max_energy
+            | eval status = if(max_energy > 100, "CRITICAL", "STABLE")
+            | rangemap field=max_energy low=0-80 elevated=80-99 default=severe
+          </query>
+          <earliest>$time_token.earliest$</earliest>
+          <latest>$time_token.latest$</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorBy">value</option>
+        <option name="colorMode">block</option>
+        <option name="useColors">1</option>
+        <option name="numberPrecision">0.00</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[80,100]</option>
+        <option name="underLabel">Vertical Energy (Joules)</option>
+      </single>
+    </panel>
+
+    <!-- PANEL 2: LANDO VS OSCAR SPEED TRACE -->
+    <panel>
+      <title>Live Speed Telemetry (Head-to-Head)</title>
+      <chart>
+        <search>
+          <query>
+            index="project_apex" sourcetype="mcl_telemetry"
+            | timechart span=1s avg(speed_kph) by car_id
+          </query>
+          <earliest>$time_token.earliest$</earliest>
+          <latest>$time_token.latest$</latest>
+        </search>
+        <option name="charting.chart">line</option>
+        <option name="charting.axisTitleX.visibility">collapsed</option>
+        <option name="charting.axisTitleY.text">Speed (KPH)</option>
+        <option name="charting.legend.placement">top</option>
+        <option name="charting.seriesColors">[0xFF8000, 0x00A0FF]</option> <!-- McLaren Orange / Blue -->
+        <option name="height">250</option>
+      </chart>
+    </panel>
+  </row>
+
+  <!-- ROW 2: LIVE EVENTS & THERMAL CORRELATION (GHOST PANEL) -->
+  <row>
+    <!-- PANEL 3: LIVE EVENT STREAM -->
+    <panel>
+      <title>Event Stream (Compliance Log)</title>
+      <table>
+        <search>
+          <query>
+            index="project_apex" sourcetype="mcl_telemetry"
+            | table _time, car_id, speed_kph, vertical_energy, engine_temp_c, compliance_status
+            | sort - _time
+          </query>
+          <earliest>$time_token.earliest$</earliest>
+          <latest>$time_token.latest$</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <!-- Colorize Critical Rows -->
+        <format type="color" field="compliance_status">
+          <colorPalette type="map">{"LEGAL":#53A051,"VIOLATION_RISK":#F8BE34,"CRITICAL: THERMAL_SQUAT":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+
+    <!-- PANEL 4: THE GHOST PANEL (Thermal-Aero Correlation) -->
+    <!-- Visible ONLY when 'show_thermal_alert' token is set -->
+    <panel depends="$show_thermal_alert$">
+      <title>CRITICAL: THERMAL LOOPHOLE DETECTED</title>
+      <chart>
+        <title>Correlation: Engine Temp vs. Ride Height</title>
+        <search>
+          <query>
+            index="project_apex" sourcetype="mcl_telemetry"
+            | table engine_temp_c, rear_rh_mm, vertical_energy
+          </query>
+          <earliest>$time_token.earliest$</earliest>
+          <latest>$time_token.latest$</latest>
+        </search>
+        <!-- SCATTER PLOT CONFIG -->
+        <option name="charting.chart">scatter</option>
+        <option name="charting.axisTitleX.text">Engine Temp (°C)</option>
+        <option name="charting.axisTitleY.text">Rear Ride Height (mm)</option>
+        <option name="charting.legend.placement">none</option>
+        <option name="height">300</option>
+        <!-- High Energy dots turn RED to prove instability -->
+        <option name="charting.fieldColors">{"vertical_energy":0xFF0000}</option>
+      </chart>
+    </panel>
+  </row>
+</dashboard>
