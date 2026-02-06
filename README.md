@@ -1,5 +1,10 @@
 # **Project Apex: MCL40 Active Aero Validation Engine**
 
+![Status](https://img.shields.io/badge/Status-Deployment%20Ready-success?style=for-the-badge)
+![Target](https://img.shields.io/badge/Target-F1%202026%20Regulations-orange?style=for-the-badge)
+![Stack](https://img.shields.io/badge/Tech-Python%20%7C%20Splunk%20HEC%20%7C%20UDP-blue?style=for-the-badge)
+![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=for-the-badge)
+
 ## **🏁 Executive Summary**
 
 **Project Apex** is a real-time telemetry validation framework engineered to solve the **"Cold Start" data challenge** for the 2026 Season. It acts as an automated logic gate between the **ATLAS** telemetry stream and **Splunk Mission Control**, validating vehicle compliance against the **FIA \>100J Vertical Oscillation Limit** in real-time.
