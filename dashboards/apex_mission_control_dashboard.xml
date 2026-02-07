@@ -30,7 +30,7 @@
 
   <!-- 
     BACKGROUND LOGIC: THERMAL THREAT SCANNER
-    Linked to $time_token$. Scans only the relevant window to improve performance.
+    Linked to $time_token$. Scans only the relevant window for performance efficiency.
   -->
   <search id="thermal_threat_scan">
     <query>
