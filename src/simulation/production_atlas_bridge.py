@@ -12,64 +12,67 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import threading
-import queue
+import socket
+import struct
 import time
-import logging
+import math
+import random
 
-# --- MOCKING THE PROPRIETARY MCLAREN LIBRARIES ---
-# In reality, this would be: import mclaren.atlas.sdk as atlas
-class MockAtlasSession:
-    """
-    Simulates connecting to the McLaren ATLAS Telemetry Server.
-    """
-    def subscribe(self, topic):
-        print(f"[ATLAS] Subscribed to {topic} stream...")
+# CONFIGURATION
+UDP_IP = "127.0.0.1"
+UDP_PORT = 20777
+FREQUENCY = 60  # 60Hz Telemetry Standard
 
-    def get_next_packet(self):
-        # SIMULATION: The server sends interleaved packets from Lando (1) and Oscar (81)
-        import random
+print(f"[*] Project Apex: ATLAS Bridge Initialized on {UDP_IP}:{UDP_PORT}")
+print("[*] Mode: HEAD-TO-HEAD SIMULATION (Lando vs Oscar)")
+print("[*] Scenario: CAR_1 (Lando) testing High-Comp Map | CAR_81 (Oscar) Baseline")
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+start_time = time.time()
+
+# SIMULATION STATE
+cando_temp = 90.0
+oscar_temp = 90.0
+
+try:
+    while True:
+        current_time = time.time()
+        elapsed = current_time - start_time
         
-        # Randomly decide whose data came in this millisecond
-        car_id = "CAR_1" if random.random() > 0.5 else "CAR_81"
+        # --- CAR 1: LANDO (THE RISK) ---
+        if cando_temp < 115.0:
+            cando_temp += 0.08
         
-        # Simulate high-speed telemetry packet
-        return {
-            "timestamp": time.time(),
-            "source_id": car_id,
-            "metric_id": "vCar:Suspension:RR:Disp", # Standard ATLAS naming convention
-            "value": 0.03 + (random.random() * 0.005), # 30mm + noise
-            "velocity": 290.0 # kph
-        }
-
-class ProductionAtlasBridge(threading.Thread):
-    def __init__(self, output_queue):
-        super().__init__()
-        self.output_queue = output_queue
-        self.running = True
-        self.atlas = MockAtlasSession()
-
-    def run(self):
-        logging.info("Connecting to MTC Telemetry Bus...")
-        self.atlas.subscribe("LIVE_SESSION_2026_GP_SILVERSTONE")
+        lando_squat_active = cando_temp > 105.0
+        lando_speed = 320.0 + (math.sin(elapsed) * 10)
+        lando_rh = 30.0 + (5 * math.sin(elapsed * 2))
         
-        while self.running:
-            # 1. Pull raw packet from the "Firehose"
-            raw_data = self.atlas.get_next_packet()
-            
-            # 2. Normalize Data (The Adapter Pattern)
-            apex_packet = {
-                "timestamp": raw_data['timestamp'],
-                "car_id": raw_data['source_id'], # "CAR_1" or "CAR_81"
-                "speed_kph": raw_data['velocity'],
-                "ride_height_raw": raw_data['value'],
-                "status": "RAW"
-            }
-            
-            # 3. Push to the Validator Service
-            self.output_queue.put(apex_packet)
-            time.sleep(0.001) 
+        if lando_squat_active:
+            lando_rh -= 2.5 # THERMAL SQUAT
+            lando_vz = (math.sin(elapsed * 15) * 1.8) # Porpoising
+        else:
+            lando_vz = 0.3 
 
-    def stop(self):
+        # --- CAR 81: OSCAR (THE CONTROL) ---
+        if oscar_temp < 98.0:
+            oscar_temp += 0.02
+        oscar_speed = 322.0 + (math.sin(elapsed) * 10)
+        oscar_rh = 30.0 + (5 * math.sin(elapsed * 2)) 
+        oscar_vz = 0.25 
 
-        self.running = False
+        # --- PACKET GENERATION ---
+        # PACKET 1: LANDO (5-char ID)
+        packet_lando = struct.pack('d5sffff', current_time, b"CAR_1", lando_speed, lando_rh, lando_vz, cando_temp)
+        sock.sendto(packet_lando, (UDP_IP, UDP_PORT))
+        
+        # PACKET 2: OSCAR (6-char ID)
+        packet_oscar = struct.pack('d6sffff', current_time, b"CAR_81", oscar_speed, oscar_rh, oscar_vz, oscar_temp)
+        sock.sendto(packet_oscar, (UDP_IP, UDP_PORT))
+        
+        if elapsed % 1.0 < 0.1: 
+            print(f"Time: {elapsed:.0f}s | Lando: {cando_temp:.1f}C | Oscar: {oscar_temp:.1f}C")
+        
+        time.sleep(1/FREQUENCY)
+
+except KeyboardInterrupt:
+    print("\n[!] Bridge Stopped.")
