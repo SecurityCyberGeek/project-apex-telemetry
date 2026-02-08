@@ -94,7 +94,7 @@ Monitor standard output for the initiation handshake:
 
 For detailed operational protocols, incident response playbooks, and the "Mercedes Loophole" physics breakdown, refer to the official documentation.
 
-[**View Project Apex: MCL40 Operations Manual (v2.1) on Notion ↗**]((https://www.notion.so/Project-Apex-MCL40-Operations-Manual-3011300163bc80caaeabf7c81d3ab233?source=copy_link))
+[**View Project Apex: MCL40 Operations Manual (v2.1) on Notion ↗**]([Project Apex Operational Manual](https://www.notion.so/Project-Apex-MCL40-Operations-Manual-3011300163bc80caaeabf7c81d3ab233?source=copy_link))
 
 ## **🎥 Concept Demonstration**
 
