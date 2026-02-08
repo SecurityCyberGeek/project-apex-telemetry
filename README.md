@@ -90,6 +90,12 @@ Monitor standard output for the initiation handshake:
 
 \[\*\] LOGIC PROFILE: MCL40\_THERMAL\_AERO\_V2
 
+## 📚 Operations Manual (SOP)
+
+For detailed operational protocols, incident response playbooks, and the "Mercedes Loophole" physics breakdown, refer to the official documentation.
+
+[**View Project Apex: MCL40 Operations Manual (v2.1) on Notion ↗**]((https://www.notion.so/Project-Apex-MCL40-Operations-Manual-3011300163bc80caaeabf7c81d3ab233?source=copy_link))
+
 ## **🎥 Concept Demonstration**
 
 **Digital Twin Validation (Shadow Mode):** Watch the 90-second Tech Demo visualizing the oscillation logic in action.
