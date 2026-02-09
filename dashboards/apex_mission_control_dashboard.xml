@@ -12,12 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-<dashboard theme="dark">
+<dashboard version="2.0" theme="dark">
   <label>Project Apex: Mission Control (MCL40)</label>
   <description>Real-Time Active Aero Validation &amp; Thermal Compliance Engine</description>
   
   <!-- TIME PICKER FIELDSET -->
-  <!-- OPTIMIZATION: Default set to 30s for Sector-Level Analysis -->
   <fieldset submitButton="false">
     <input type="time" token="time_token">
       <label>Analysis Window</label>
@@ -41,11 +40,9 @@
     <earliest>$time_token.earliest$</earliest>
     <latest>$time_token.latest$</latest>
     <done>
-      <!-- If threat found, UNHIDE the Ghost Panel -->
       <condition match="'job.resultCount' > 0">
         <set token="show_thermal_alert">true</set>
       </condition>
-      <!-- If no threat, HIDE the panel -->
       <condition>
         <unset token="show_thermal_alert"></unset>
       </condition>
@@ -54,7 +51,7 @@
 
   <!-- ROW 1: SYSTEM STATUS & HEAD-TO-HEAD SPEED -->
   <row>
-    <!-- PANEL 1: AGGREGATE AERO STATUS -->
+    <!-- PANEL 1: AGGREGATE AERO STATUS (UPDATED TRAFFIC LIGHT LOGIC) -->
     <panel>
       <title>Aero Platform Status</title>
       <single>
@@ -62,8 +59,8 @@
           <query>
             index="project_apex" sourcetype="mcl_telemetry"
             | stats max(vertical_energy) as max_energy
-            | eval status = if(max_energy > 100, "CRITICAL", "STABLE")
-            | rangemap field=max_energy low=0-80 elevated=80-99 default=severe
+            | eval status = case(max_energy > 100, "CRITICAL", max_energy > 80, "HIGH RISK", true(), "STABLE")
+            | rangemap field=max_energy low=0-79 elevated=80-99 default=severe
           </query>
           <earliest>$time_token.earliest$</earliest>
           <latest>$time_token.latest$</latest>
@@ -73,6 +70,7 @@
         <option name="colorMode">block</option>
         <option name="useColors">1</option>
         <option name="numberPrecision">0.00</option>
+        <!-- Green (0-80), Yellow (80-100), Red (>100) -->
         <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
         <option name="rangeValues">[80,100]</option>
         <option name="underLabel">Vertical Energy (Joules)</option>
@@ -126,7 +124,6 @@
     </panel>
 
     <!-- PANEL 4: THE GHOST PANEL (Thermal-Aero Correlation) -->
-    <!-- Visible ONLY when 'show_thermal_alert' token is set -->
     <panel depends="$show_thermal_alert$">
       <title>CRITICAL: THERMAL LOOPHOLE DETECTED</title>
       <chart>
@@ -139,13 +136,11 @@
           <earliest>$time_token.earliest$</earliest>
           <latest>$time_token.latest$</latest>
         </search>
-        <!-- SCATTER PLOT CONFIG -->
         <option name="charting.chart">scatter</option>
         <option name="charting.axisTitleX.text">Engine Temp (°C)</option>
         <option name="charting.axisTitleY.text">Rear Ride Height (mm)</option>
         <option name="charting.legend.placement">none</option>
         <option name="height">300</option>
-        <!-- High Energy dots turn RED to prove instability -->
         <option name="charting.fieldColors">{"vertical_energy":0xFF0000}</option>
       </chart>
     </panel>
