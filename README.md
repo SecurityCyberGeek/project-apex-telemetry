@@ -32,22 +32,35 @@ Crucially, **v2.0** introduces specific logic to detect **Thermally-Induced Aero
 The system follows a decoupled **Edge Compute** architecture designed for the MTC Network:
 
 ``` mermaid
-graph LR  
-    subgraph "Trackside / MTC Edge"  
-    A\[ATLAS Forwarder\] \--\>|"UDP (60Hz)"| B(Edge Validator Service)  
-    end  
-      
-    subgraph "Logic Core"  
-    B \--\>|"Thermal Check (\>105C)"| C{Compliance Gate}  
-    C \--\>|"Stable"| D\[Discard/Log\]  
-    C \--\>|"Violation (\>100J)"| E\[Splunk HEC\]  
-    end  
-      
-    subgraph "Mission Control"  
-    E \--\>|"HTTPS (JSON)"| F\[Dashboard Visualization\]  
+flowchart TD
+    subgraph Trackside [Trackside Data Acquisition]
+        Car[MCL40 Sensors] -- Raw Data --> ATLAS[ATLAS Forwarder]
     end
 
-    style E fill:\#FF8000,stroke:\#333,stroke-width:2px,color:\#fff
+    subgraph EdgeCompute [Cisco IOx Edge Node / Python Validator]
+        ATLAS -- 60Hz UDP Multicast<br/>Port 20777 --> Buffer[1MB OS Receive Buffer<br/>SO_RCVBUF]
+        Buffer --> Unpack[Binary Struct Unpacking<br/>Little-Endian]
+        Unpack --> LogicGate{Physics Logic Gate:<br/>Temp > 105°C & Energy > 80J}
+        LogicGate -- Nominal --> Legal[Status: LEGAL]
+        LogicGate -- Platform Risk --> Anomaly[Status:<br/>CRITICAL: TORQUE_ANOMALY]
+    end
+
+    subgraph MissionControl [MTC Mission Control / Splunk Enterprise]
+        Anomaly -- Persistent HTTPS Session<br/>Splunk HEC --> Index[(project_apex Index)]
+        Legal -. Standard Telemetry .-> Index
+        Index --> Dashboard[Dashboard Studio]
+        Dashboard -. Reactive Token Trigger .-> GhostPanel[Ghost Panel Appears:<br/>Transient Torque Anomaly Detected]
+    end
+
+    classDef hardware fill:#333333,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef logic fill:#0052cc,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef critical fill:#DC4E41,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    classDef nominal fill:#53A051,stroke:#ffffff,stroke-width:2px,color:#ffffff;
+    
+    class Car,ATLAS,Buffer,Unpack,Index,Dashboard hardware;
+    class LogicGate logic;
+    class Anomaly,GhostPanel critical;
+    class Legal nominal;
 ```
 
 * **Ingest:** Raw UDP Stream from ATLAS (Trackside/MTC).  
