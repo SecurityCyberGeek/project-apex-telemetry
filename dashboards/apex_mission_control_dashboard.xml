@@ -12,137 +12,242 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-<dashboard version="2.0" theme="dark">
-  <label>Project Apex: Mission Control (MCL40)</label>
-  <description>Real-Time Active Aero Validation &amp; Thermal Compliance Engine</description>
-  
-  <!-- TIME PICKER FIELDSET -->
-  <fieldset submitButton="false">
-    <input type="time" token="time_token">
-      <label>Analysis Window</label>
-      <default>
-        <earliest>rt-30s</earliest>
-        <latest>rt</latest>
-      </default>
-    </input>
-  </fieldset>
-
-  <!-- 
-    BACKGROUND LOGIC: THERMAL THREAT SCANNER
-    Linked to $time_token$. Scans only the relevant window for performance efficiency.
-  -->
-  <search id="thermal_threat_scan">
-    <query>
-      index="project_apex" 
-      | stats max(engine_temp_c) as peak_temp max(vertical_energy) as peak_energy
-      | where peak_temp > 105 AND peak_energy > 80
-    </query>
-    <earliest>$time_token.earliest$</earliest>
-    <latest>$time_token.latest$</latest>
-    <done>
-      <condition match="'job.resultCount' > 0">
-        <set token="show_thermal_alert">true</set>
-      </condition>
-      <condition>
-        <unset token="show_thermal_alert"></unset>
-      </condition>
-    </done>
-  </search>
-
-  <!-- ROW 1: SYSTEM STATUS & HEAD-TO-HEAD SPEED -->
-  <row>
-    <!-- PANEL 1: AGGREGATE AERO STATUS (UPDATED TRAFFIC LIGHT LOGIC) -->
-    <panel>
-      <title>Aero Platform Status</title>
-      <single>
-        <search>
-          <query>
-            index="project_apex" sourcetype="mcl_telemetry"
-            | stats max(vertical_energy) as max_energy
-            | eval status = case(max_energy > 100, "CRITICAL", max_energy > 80, "HIGH RISK", true(), "STABLE")
-            | rangemap field=max_energy low=0-79 elevated=80-99 default=severe
-          </query>
-          <earliest>$time_token.earliest$</earliest>
-          <latest>$time_token.latest$</latest>
-        </search>
-        <option name="drilldown">none</option>
-        <option name="colorBy">value</option>
-        <option name="colorMode">block</option>
-        <option name="useColors">1</option>
-        <option name="numberPrecision">0.00</option>
-        <!-- Green (0-80), Yellow (80-100), Red (>100) -->
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
-        <option name="rangeValues">[80,100]</option>
-        <option name="underLabel">Vertical Energy (Joules)</option>
-      </single>
-    </panel>
-
-    <!-- PANEL 2: LANDO VS OSCAR SPEED TRACE -->
-    <panel>
-      <title>Live Speed Telemetry (Head-to-Head)</title>
-      <chart>
-        <search>
-          <query>
-            index="project_apex" sourcetype="mcl_telemetry"
-            | timechart span=1s avg(speed_kph) by car_id
-          </query>
-          <earliest>$time_token.earliest$</earliest>
-          <latest>$time_token.latest$</latest>
-        </search>
-        <option name="charting.chart">line</option>
-        <option name="charting.axisTitleX.visibility">collapsed</option>
-        <option name="charting.axisTitleY.text">Speed (KPH)</option>
-        <option name="charting.legend.placement">top</option>
-        <option name="charting.seriesColors">[0xFF8000, 0x00A0FF]</option> <!-- McLaren Orange / Blue -->
-        <option name="height">250</option>
-      </chart>
-    </panel>
-  </row>
-
-  <!-- ROW 2: LIVE EVENTS & THERMAL CORRELATION (GHOST PANEL) -->
-  <row>
-    <!-- PANEL 3: LIVE EVENT STREAM -->
-    <panel>
-      <title>Event Stream (Compliance Log)</title>
-      <table>
-        <search>
-          <query>
-            index="project_apex" sourcetype="mcl_telemetry"
-            | table _time, car_id, speed_kph, vertical_energy, engine_temp_c, compliance_status
-            | sort - _time
-          </query>
-          <earliest>$time_token.earliest$</earliest>
-          <latest>$time_token.latest$</latest>
-        </search>
-        <option name="count">10</option>
-        <option name="drilldown">none</option>
-        <!-- Colorize Critical Rows -->
-        <format type="color" field="compliance_status">
-          <colorPalette type="map">{"LEGAL":#53A051,"VIOLATION_RISK":#F8BE34,"CRITICAL: THERMAL_SQUAT":#DC4E41}</colorPalette>
-        </format>
-      </table>
-    </panel>
-
-    <!-- PANEL 4: THE GHOST PANEL (Thermal-Aero Correlation) -->
-    <panel depends="$show_thermal_alert$">
-      <title>CRITICAL: THERMAL LOOPHOLE DETECTED</title>
-      <chart>
-        <title>Correlation: Engine Temp vs. Ride Height</title>
-        <search>
-          <query>
-            index="project_apex" sourcetype="mcl_telemetry"
-            | table engine_temp_c, rear_rh_mm, vertical_energy
-          </query>
-          <earliest>$time_token.earliest$</earliest>
-          <latest>$time_token.latest$</latest>
-        </search>
-        <option name="charting.chart">scatter</option>
-        <option name="charting.axisTitleX.text">Engine Temp (°C)</option>
-        <option name="charting.axisTitleY.text">Rear Ride Height (mm)</option>
-        <option name="charting.legend.placement">none</option>
-        <option name="height">300</option>
-        <option name="charting.fieldColors">{"vertical_energy":0xFF0000}</option>
-      </chart>
-    </panel>
-  </row>
-</dashboard>
+{
+    "title": "Project Apex: Mission Control (MCL40)",
+    "description": "Real-Time Active Aero Validation & Thermal Compliance Engine",
+    "inputs": {
+        "input_GlobalTime": {
+            "options": {
+                "defaultValue": "rt-30s,rt",
+                "token": "time_token"
+            },
+            "title": "Analysis Window",
+            "type": "input.timerange"
+        }
+    },
+    "defaults": {
+        "dataSources": {
+            "ds.search": {
+                "options": {
+                    "queryParameters": {
+                        "earliest": "$time_token.earliest$",
+                        "latest": "$time_token.latest$"
+                    }
+                }
+            }
+        }
+    },
+    "visualizations": {
+        "viz_EventStream": {
+            "context": {
+                "compliance_status_colors": [
+                    {
+                        "match": "CRITICAL: TORQUE_ANOMALY",
+                        "value": "#DC4E41"
+                    },
+                    {
+                        "match": "VIOLATION_RISK",
+                        "value": "#F8BE34"
+                    },
+                    {
+                        "match": "LEGAL",
+                        "value": "#53A051"
+                    }
+                ]
+            },
+            "dataSources": {
+                "primary": "ds_EventStream"
+            },
+            "options": {
+                "count": 10,
+                "dataOverlayMode": "none",
+                "drilldown": "none",
+                "tableFormat": {
+                    "rowBackgroundColors": "> table | seriesByName(\"compliance_status\") | matchValue(compliance_status_colors)"
+                }
+            },
+            "title": "Event Stream (Compliance Log)",
+            "type": "splunk.table"
+        },
+        "viz_PlatformStatus": {
+            "dataSources": {
+                "primary": "ds_PlatformStatus"
+            },
+            "options": {
+                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+                "majorColorConfig": [
+                    {
+                        "to": 80,
+                        "value": "#53A051"
+                    },
+                    {
+                        "from": 80,
+                        "to": 100,
+                        "value": "#F8BE34"
+                    },
+                    {
+                        "from": 100,
+                        "value": "#DC4E41"
+                    }
+                ],
+                "sparklineDisplay": "off",
+                "trendColor": "> trendValue | rangeValue(trendColorConfig)",
+                "underLabel": "Vertical Energy (Joules)"
+            },
+            "title": "Aero Platform Status",
+            "type": "splunk.singlevalue"
+        },
+        "viz_SpeedTrace": {
+            "dataSources": {
+                "primary": "ds_SpeedTrace"
+            },
+            "options": {
+                "seriesColors": [
+                    "#FF8000",
+                    "#00A0FF"
+                ],
+                "xAxisTitleVisibility": "hide",
+                "yAxisTitleText": "Speed (KPH)"
+            },
+            "title": "Live Speed Telemetry (Head-to-Head)",
+            "type": "splunk.line"
+        },
+        "viz_ThermalScatter": {
+            "dataSources": {
+                "primary": "ds_ThermalScatter"
+            },
+            "options": {
+                "seriesColors": [
+                    "#DC4E41"
+                ],
+                "xAxisTitleText": "Engine Temp (°C)",
+                "yAxisTitleText": "Platform Compression (mm)"
+            },
+            "showLastUpdated": false,
+            "showProgressBar": false,
+            "title": "Transient Torque Anomaly Detected",
+            "type": "splunk.scatter"
+        }
+    },
+    "dataSources": {
+        "ds_EventStream": {
+            "name": "Event Stream Search",
+            "options": {
+                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\" \n| table _time, car_id, speed_kph, vertical_energy, engine_temp_c, compliance_status \n| sort - _time",
+                "queryParameters": {
+                    "earliest": "$time_token.earliest$",
+                    "latest": "$time_token.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_PlatformStatus": {
+            "name": "Platform Status Search",
+            "options": {
+                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\" \n| stats max(vertical_energy) as majorValue",
+                "queryParameters": {
+                    "earliest": "$time_token.earliest$",
+                    "latest": "$time_token.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_SpeedTrace": {
+            "name": "Speed Trace Search",
+            "options": {
+                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\" \n| timechart span=1s avg(speed_kph) by car_id",
+                "queryParameters": {
+                    "earliest": "$time_token.earliest$",
+                    "latest": "$time_token.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_ThermalCheck": {
+            "name": "Thermal Threat Scanner",
+            "options": {
+                "query": "index=\"project_apex\" \n| stats max(engine_temp_c) as peak_temp max(vertical_energy) as peak_energy \n| where peak_temp > 105 AND peak_energy > 80",
+                "queryParameters": {
+                    "earliest": "$time_token.earliest$",
+                    "latest": "$time_token.latest$"
+                }
+            },
+            "type": "ds.search"
+        },
+        "ds_ThermalScatter": {
+            "name": "Thermal Scatter Search",
+            "options": {
+                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\" \n| table engine_temp_c, rear_rh_mm",
+                "queryParameters": {
+                    "earliest": "$time_token.earliest$",
+                    "latest": "$time_token.latest$"
+                }
+            },
+            "type": "ds.search"
+        }
+    },
+    "layout": {
+        "globalInputs": [
+            "input_GlobalTime"
+        ],
+        "layoutDefinitions": {
+            "layout_1": {
+                "options": {
+                    "height": 960,
+                    "width": 1440
+                },
+                "structure": [
+                    {
+                        "item": "viz_PlatformStatus",
+                        "position": {
+                            "h": 300,
+                            "w": 400,
+                            "x": 0,
+                            "y": 0
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_SpeedTrace",
+                        "position": {
+                            "h": 300,
+                            "w": 1040,
+                            "x": 400,
+                            "y": 0
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_EventStream",
+                        "position": {
+                            "h": 660,
+                            "w": 720,
+                            "x": 0,
+                            "y": 300
+                        },
+                        "type": "block"
+                    },
+                    {
+                        "item": "viz_ThermalScatter",
+                        "position": {
+                            "h": 660,
+                            "w": 720,
+                            "x": 720,
+                            "y": 300
+                        },
+                        "type": "block"
+                    }
+                ],
+                "type": "grid"
+            }
+        },
+        "tabs": {
+            "items": [
+                {
+                    "label": "New tab",
+                    "layoutId": "layout_1"
+                }
+            ]
+        }
+    }
+}
