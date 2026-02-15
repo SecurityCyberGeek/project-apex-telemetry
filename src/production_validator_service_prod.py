@@ -15,15 +15,20 @@
 #!/usr/bin/env python3
 """
 PROJECT APEX: ACTIVE AERO VALIDATION SERVICE (PRODUCTION)
-Deployment: Cisco IOx Edge Compute / MTC Server
-Context: F1 2026 Regulations (MCL40)
-Author: Timothy D. Harmon, CISSP
+---------------------------------------------------------
+Context:    F1 2026 Technical Regulations (MCL40)
+Deployment: Cisco IOx Edge Compute / MTC Mission Control
+Author:     Timothy D. Harmon, CISSP
 
 DESCRIPTION:
-This service acts as the 'Edge Brain' for the Project Apex framework.
-It listens for high-frequency UDP telemetry from the ATLAS forwarder,
-calculates vertical oscillation energy in real-time, and enforces
-the FIA 100J compliance limit.
+This service acts as the 'Edge Brain' for the Project Apex framework. 
+It processes high-frequency (60Hz) UDP telemetry from the ATLAS forwarder to 
+detect **Transient Torque Anomalies** caused by Power Unit thermal expansion 
+(16:1 -> 18:1 delta).
+
+It utilizes a producer-consumer threaded architecture to correlate the Engine 
+Temperature with Vertical Energy, flagging platform instability (Aero Stall) 
+and enforcing the FIA 100J vertical oscillation limit in real-time.
 """
 
 #!/usr/bin/env python3
@@ -216,3 +221,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
