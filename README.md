@@ -13,12 +13,13 @@ It pipelines high-frequency (60Hz) physical telemetry from the **ATLAS** forward
 
 ## **🏎️ The Physics Problem (2026 Regulations)**
 
-While the 2026 Technical Regulations mandate a **16:1 geometric compression ratio**, thermal expansion at race temperatures (\~105°C) creates an effective ratio closer to **18:1**.
+The 2026 Technical Regulations introduce two conflicting variables that threaten platform stability:
 
-* **The Risk:** This "Thermal Delta" results in a **Transient Torque Gain** not present in standard homologated maps.  
-* **The Consequence:** This unmapped torque mechanically compresses the rear suspension (\~2.5mm squat), shifting the aerodynamic Center of Pressure (CoP) rearward and risking a **diffuser stall** (porpoising).
+1. **Thermal Expansion Delta:** The shift from 16:1 (Ambient) to \~18:1 (Race Temp) creates a **Transient Torque Gain** not present in standard maps.  
+2. **Hybrid Torque Conflict:** The 50/50 power split forces aggressive MGU-K deployment/harvesting events that can conflict with the ICE torque curve during "Lift & Coast" or "Corner Exit" phases.
 
-**Project Apex** acts as a deterministic logic gate, correlating **Engine Temperature** with **Vertical Energy** to flag these anomalies before they violate the FIA's 100J oscillation limit.
+**The Consequence:** Both scenarios result in **Unmapped Torque Anomalies** that mechanically compress the rear suspension (\~2.5mm squat), shifting the aerodynamic Center of Pressure (CoP) and risking a **diffuser stall** (porpoising).  
+**Project Apex** acts as a deterministic logic gate. While primarily triggered by Thermal State (\>105°C), its **Vertical Energy Validation (\>100J)** effectively catches platform instability caused by *either* thermal expansion or hybrid integration conflicts.
 
 ## **⚙️ System Architecture (v2.1)**
 
