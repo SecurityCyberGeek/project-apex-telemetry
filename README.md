@@ -116,6 +116,12 @@ if engine\_temp \> THERMAL\_THRESHOLD\_C:
 
 ### **Prerequisites**
 
+* Docker installed (for Edge deployment) or Python 3.10+ (for local testing)  
+* Network Access to Garage LAN (UDP 20777\)  
+* Splunk HEC Token (Administrator Access)
+
+### **🐳 Production Edge Deployment (Docker / Cisco IOx)**
+
 Project Apex is fully containerized for rapid deployment to trackside edge-compute nodes (e.g., Cisco Catalyst hardware running IOx) in restricted garage environments.
 
 **1\. Build the Docker Image:**
