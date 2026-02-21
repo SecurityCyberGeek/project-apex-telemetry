@@ -126,11 +126,11 @@ Project Apex is fully containerized for rapid deployment to trackside edge-compu
 
 **1\. Build the Docker Image:**
 
-docker build \-t project-apex-edge .
+```docker build \-t project-apex-edge .```
 
 **2\. Run the Container:**
 
-docker run \--rm \-it \-p 20777:20777/udp \-e SPLUNK\_TOKEN="your\_secure\_token" project-apex-edge
+```docker run \--rm \-it \-p 20777:20777/udp \-e SPLUNK\_TOKEN="your\_secure\_token" project-apex-edge```
 
 **Note for Cisco IOx environments:** After building the Docker image locally, use the ioxclient CLI tool to package the image into a .tar file for direct deployment via the Cisco Local Manager to the trackside Catalyst edge nodes.
 
@@ -139,15 +139,17 @@ docker run \--rm \-it \-p 20777:20777/udp \-e SPLUNK\_TOKEN="your\_secure\_token
 If testing locally without Docker:
 
 \# 1\. Clone the Repo    
-git clone \[https://github.com/SecurityCyberGeek/project-apex-telemetry.git\](https://github.com/SecurityCyberGeek/project-apex-telemetry.git)
+```git clone \[https://github.com/SecurityCyberGeek/project-apex-telemetry.git\](https://github.com/SecurityCyberGeek/project-apex-telemetry.git)```
 
 \# 2\. Set Environment Variables (CISSP Standard: No Hardcoded Tokens)    
+```
 export SPLUNK\_HEC\_URL="\[https://splunk-hec.mclaren.internal:8088/services/collector/event\](https://splunk-hec.mclaren.internal:8088/services/collector/event)"    
 export SPLUNK\_TOKEN="\[SECURE\_INJECTED\_TOKEN\]"    
 export LISTEN\_PORT=20777
+```
 
 \# 3\. Run the Validator    
-python3 src/production\_validator\_service\_prod.py
+```python3 src/production\_validator\_service\_prod.py```
 
 ### **Verification**
 
