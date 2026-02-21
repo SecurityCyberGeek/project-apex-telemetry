@@ -116,9 +116,9 @@ if engine\_temp \> THERMAL\_THRESHOLD\_C:
 
 ### **Prerequisites**
 
-* Docker installed (for Edge deployment) or Python 3.10+ (for local testing)  
-* Network Access to Garage LAN (UDP 20777\)  
-* Splunk HEC Token (Administrator Access)
+* * Docker installed (for Edge deployment) or Python 3.10+ (for local testing)  
+* * Network Access to Garage LAN (UDP 20777\)  
+* * Splunk HEC Token (Administrator Access)
 
 ### **🐳 Production Edge Deployment (Docker / Cisco IOx)**
 
