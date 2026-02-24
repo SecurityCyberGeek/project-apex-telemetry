@@ -29,16 +29,14 @@ To support 60Hz telemetry without packet loss on constrained edge hardware (Cisc
 ``` mermaid
 flowchart TD  
     %% Subgraph for the External Data Source  
-    subgraph Trackside \[1. Ingest Producer\]  
-        direction TB  
+    subgraph Trackside \[1. Ingest Producer\]    
         ATLAS\[ATLAS Forwarder\]   
         \-- UDP Multicast\<br\>Port 20777 \--\> Socket\[UDP Socket\]  
         Socket \--\> Buffer\[OS Receive Buffer\<br\>SO\_RCVBUF: 1MB\]  
     end
 
     %% Subgraph for the Internal Logic within the Python Script  
-    subgraph EdgeCompute \[2. Edge Compute Logic Gate\]  
-        direction TB  
+    subgraph EdgeCompute \[2. Edge Compute Logic Gate\]    
         Buffer \-- Raw Bytes \--\> PyMain\[Main Thread:\<br\>production\_validator\_service\_prod.py\]  
         PyMain \-- Enqueue \--\> Queue\[(Thread-Safe Queue)\]  
         Queue \-- Dequeue \--\> Worker\[Worker Thread\]  
