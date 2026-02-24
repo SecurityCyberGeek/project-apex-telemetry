@@ -9,65 +9,65 @@
 
 **Project Apex** is an edge-compute telemetry pipeline designed to bridge the correlation gap between 2026 F1 Power Unit simulations and trackside reality.
 
-It pipelines high-frequency (60Hz) physical telemetry from the **ATLAS** forwarder directly into **Splunk Enterprise** via HEC to validate vehicle compliance in real-time. Its primary function is to detect **Transient Torque Anomalies**—unmapped torque spikes caused by PU thermal expansion—that risk destabilizing the aerodynamic platform.
+It pipelines high-frequency (60Hz) physical telemetry from the **ATLAS** forwarder directly into **Splunk Enterprise** via HEC to validate vehicle compliance in real-time. Its primary function is to detect **Transient Torque Anomalies**—unmapped torque spikes caused by PU thermal-kinematic transitions—that risk destabilizing the aerodynamic platform.
 
 ## **🏎️ The Physics Problem (2026 Regulations)**
 
 The 2026 Technical Regulations introduce two conflicting variables that threaten platform stability:
 
-1. **Thermal Expansion Delta:** The shift from 16:1 (Ambient) to \~18:1 (Race Temp) creates a **Transient Torque Gain** not present in standard maps.  
+1. **The Thermal-Kinematic Transition:** The shift from 16:1 geometric compression (Ambient) to \~18:1 effective compression (at the 130°C FIA regulatory threshold) creates a **Transient Torque Gain** not present in standard static maps.  
 2. **Hybrid Torque Conflict:** The 50/50 power split forces aggressive MGU-K deployment/harvesting events that can conflict with the ICE torque curve during "Lift & Coast" or "Corner Exit" phases.
 
 **The Consequence:** Both scenarios result in **Unmapped Torque Anomalies** that mechanically compress the rear suspension (\~2.5mm squat), shifting the aerodynamic Center of Pressure (CoP) and risking a **diffuser stall** (porpoising).
 
-**Project Apex** acts as a deterministic logic gate. While primarily triggered by Thermal State (\>105°C), its **Vertical Energy Validation (\>100J)** effectively catches platform instability caused by *either* thermal expansion or hybrid integration conflicts.
+**Project Apex** acts as a deterministic logic gate. While primarily triggered by Thermal State (\>130°C), its **Vertical Energy Validation (\>100J)** effectively catches platform instability caused by *either* thermal expansion or hybrid integration conflicts.
 
 ## **⚙️ System Architecture (v2.1)**
 
 To support 60Hz telemetry without packet loss on constrained edge hardware (Cisco IOx), the system utilizes a **Threaded Producer-Consumer** architecture.
 
 ``` mermaid
-flowchart TD
-    %% Subgraph for the External Data Source
-    subgraph Trackside [1. Ingest Producer]
-        direction TB
-        ATLAS[ATLAS Forwarder] 
-        -- UDP Multicast<br>Port 20777 --> Socket[UDP Socket]
-        Socket --> Buffer[OS Receive Buffer<br>SO_RCVBUF: 1MB]
+flowchart TD  
+    %% Subgraph for the External Data Source  
+    subgraph Trackside \[1. Ingest Producer\]  
+        direction TB  
+        ATLAS\[ATLAS Forwarder\]   
+        \-- UDP Multicast\<br\>Port 20777 \--\> Socket\[UDP Socket\]  
+        Socket \--\> Buffer\[OS Receive Buffer\<br\>SO\_RCVBUF: 1MB\]  
     end
 
-    %% Subgraph for the Internal Logic within the Python Script
-    subgraph EdgeCompute [2. Edge Compute Logic Gate]
-        direction TB
-        Buffer -- Raw Bytes --> PyMain[Main Thread:<br>production_validator_service_prod.py]
-        PyMain -- Enqueue --> Queue[(Thread-Safe Queue)]
-        Queue -- Dequeue --> Worker[Worker Thread]
-        Worker --> Decode[Decode Binary Structs]
-        Decode --> LogicGate{Logic Gate:<br>Temp > 105°C<br>AND<br>Energy > 100J}
+    %% Subgraph for the Internal Logic within the Python Script  
+    subgraph EdgeCompute \[2. Edge Compute Logic Gate\]  
+        direction TB  
+        Buffer \-- Raw Bytes \--\> PyMain\[Main Thread:\<br\>production\_validator\_service\_prod.py\]  
+        PyMain \-- Enqueue \--\> Queue\[(Thread-Safe Queue)\]  
+        Queue \-- Dequeue \--\> Worker\[Worker Thread\]  
+        Worker \--\> Decode\[Decode Binary Structs\]  
+        Decode \--\> LogicGate{Logic Gate:\<br\>Temp \> 130°C\<br\>AND\<br\>Energy \> 100J}  
     end
 
-    %% Subgraph for the Transport Layer
-    subgraph TransportLayer [3. Transport Consumer]
-        LogicGate -- Nominal --> Drop[Drop Packet]
-        LogicGate -- Critical Anomaly --> Session[Persistent HTTPS Session<br>TCP Keep-Alive]
+    %% Subgraph for the Transport Layer  
+    subgraph TransportLayer \[3. Transport Consumer\]  
+        LogicGate \-- Nominal \--\> Drop\[Drop Packet\]  
+        LogicGate \-- Critical Anomaly \--\> Session\[Persistent HTTPS Session\<br\>TCP Keep-Alive\]  
     end
 
-    %% Subgraph for Visualization
-    subgraph Visualization [4. Visualization]
-        Session -- JSON Payload --> Splunk[Splunk Heavy Forwarder]
-        Splunk --> Dashboard[Mission Control Dashboard]
-        Dashboard -- Trigger --> GhostPanel[Ghost Panel Active:<br>Transient Torque Anomaly]
+    %% Subgraph for Visualization  
+    subgraph Visualization \[4. Visualization\]  
+        Session \-- JSON Payload \--\> Splunk\[Splunk Heavy Forwarder\]  
+        Splunk \--\> Dashboard\[Mission Control Dashboard\]  
+        Dashboard \-- Trigger \--\> GhostPanel\[Ghost Panel Active:\<br\>Transient Torque Anomaly\]  
     end
 
-    %% Styling for "Executive/Dark Mode" Look
-    classDef source fill:#333,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef process fill:#0052cc,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef buffer fill:#ff9900,stroke:#fff,stroke-width:2px,color:#000;
-    classDef alert fill:#DC4E41,stroke:#fff,stroke-width:2px,color:#fff;
+    %% Styling for "Executive/Dark Mode" Look  
+    classDef source fill:\#333,stroke:\#fff,stroke-width:2px,color:\#fff;  
+    classDef process fill:\#0052cc,stroke:\#fff,stroke-width:2px,color:\#fff;  
+    classDef buffer fill:\#ff9900,stroke:\#fff,stroke-width:2px,color:\#000;  
+    classDef alert fill:\#DC4E41,stroke:\#fff,stroke-width:2px,color:\#fff;
 
-    class ATLAS,Socket,Splunk source;
-    class PyMain,Worker,Decode,Session,Dashboard process;
-    class Buffer,Queue buffer;
+    class ATLAS,Socket,Splunk source;  
+    class PyMain,Worker,Decode,Session,Dashboard process;  
+    class Buffer,Queue buffer;  
     class LogicGate,GhostPanel alert;
 ```
 
@@ -99,16 +99,16 @@ As a deployment intended for critical race infrastructure, Project Apex enforces
 The core logic correlates the thermal state with suspension dynamics to identify "Torque-Induced Squat."
 
 ```python
-# Project Apex Logic Gate  
-THERMAL\_THRESHOLD\_C \= 105.0   
+# Project Apex Logic Gate    
+THERMAL\_THRESHOLD\_C \= 130.0     
 ENERGY\_LIMIT\_J \= 80.0 \# Lower threshold when floor is choked
 
-if engine\_temp \> THERMAL\_THRESHOLD\_C:  
-    # Thermal Expansion State Detected (Effective 18:1)  
-    thermal\_mode \= "HIGH\_COMPRESSION"  
-      
-    # If the car oscillates while in this state, it is a Torque Anomaly  
-    if energy\_joules \> ENERGY\_LIMIT\_J:  
+if engine\_temp \> THERMAL\_THRESHOLD\_C:    
+    \# Thermal-Kinematic Transition State Detected (Effective 18:1)    
+    thermal\_mode \= "HIGH\_COMPRESSION"    
+        
+    \# If the car oscillates while in this state, it is a Torque Anomaly    
+    if energy\_joules \> ENERGY\_LIMIT\_J:    
         compliance\_status \= "CRITICAL: TORQUE\_ANOMALY"
 ```
 
