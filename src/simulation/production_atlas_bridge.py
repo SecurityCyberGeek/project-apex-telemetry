@@ -31,9 +31,9 @@ print("[*] Pattern: Burst Logic (Simulating Corner Exits)")
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 start_time = time.time()
 
-# Fixed variable name typo (cando -> lando)
-lando_temp = 90.0
-oscar_temp = 90.0
+# Adjusted baseline temperatures to quickly reach the 130C FIA threshold
+lando_temp = 115.0
+oscar_temp = 115.0
 
 try:
     while True:
@@ -42,7 +42,7 @@ try:
         
         # --- CAR 1: LANDO (THE ANOMALY) ---
         # 1. Simulate Thermal Creep (Engine getting hotter over the "lap")
-        if lando_temp < 115.0:
+        if lando_temp < 140.0:
             lando_temp += 0.08  
         
         # 2. Simulate "High Load" Events (Corner Exits)
@@ -53,9 +53,9 @@ try:
         
         # LOGIC GATE: 
         # The Anomaly requires TWO conditions:
-        # A. Engine is Expanded (Temp > 105)
+        # A. Engine is Expanded (Temp > 130)
         # B. Driver is demanding Torque (Accelerating)
-        torque_anomaly_active = (lando_temp > 105.0) and is_accelerating
+        torque_anomaly_active = (lando_temp > 130.0) and is_accelerating
         
         lando_speed = 320.0 + (math.sin(elapsed) * 10)
         
@@ -92,7 +92,7 @@ try:
         if elapsed % 0.5 < 0.05: 
             if torque_anomaly_active:
                 status = "!!! TORQUE SPIKE !!!" 
-            elif lando_temp > 105.0:
+            elif lando_temp > 130.0:
                 status = "High Temp (Coasting)"
             else:
                 status = "Nominal"
