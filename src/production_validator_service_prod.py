@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 PROJECT APEX: ACTIVE AERO VALIDATION SERVICE (PRODUCTION)
 ---------------------------------------------------------
@@ -22,16 +23,14 @@ Author:     Timothy D. Harmon, CISSP
 
 DESCRIPTION:
 This service acts as the 'Edge Brain' for the Project Apex framework. 
-It processes high-frequency (60Hz) UDP telemetry from the ATLAS forwarder to 
-detect **Transient Torque Anomalies** caused by Power Unit thermal expansion 
-(16:1 -> 18:1 delta).
+It utilizes a multi-threaded producer-consumer architecture to process 
+high-frequency (60Hz) UDP telemetry from the ATLAS forwarder.
 
-It utilizes a producer-consumer threaded architecture to correlate the Engine 
-Temperature with Vertical Energy, flagging platform instability (Aero Stall) 
-and enforcing the FIA 100J vertical oscillation limit in real-time.
+Its primary function is to detect **Transient Torque Anomalies** caused by 
+Power Unit thermal expansion (16:1 -> 18:1 delta), flagging platform 
+instability and enforcing the FIA 100J vertical oscillation limit.
 """
 
-#!/usr/bin/env python3
 import socket
 import struct
 import json
@@ -54,8 +53,7 @@ logger = logging.getLogger("ApexValidator")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- PRODUCTION CONFIGURATION (ENV VARS) ---
-# SECURITY FIX: Default to HTTPS. 
-# McLaren IT will override this via 'export SPLUNK_HEC_URL=...' in the IOx profile.
+# SECURITY FIX: Default to McLaren Internal HTTPS
 SPLUNK_HEC_URL = os.getenv("SPLUNK_HEC_URL", "https://splunk-hec.mclaren.internal:8088/services/collector/event")
 SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN", "REPLACE_WITH_SECURE_TOKEN")
 LISTEN_IP = os.getenv("LISTEN_IP", "0.0.0.0") 
@@ -63,7 +61,7 @@ LISTEN_PORT = int(os.getenv("LISTEN_PORT", "20777"))
 
 # --- PHYSICS CONSTANTS (MCL40) ---
 CAR_MASS_KG = 798.0
-THERMAL_THRESHOLD_C = 105.0 
+THERMAL_THRESHOLD_C = 130.0 
 ENERGY_LIMIT_J = 100.0       
 
 # --- THREADING CONFIGURATION ---
@@ -76,6 +74,7 @@ last_success_log_time = 0.0
 last_error_log_time = 0.0
 
 # --- OPTIMIZATION: PERSISTENT SESSION ---
+# Enables TCP Keep-Alive to eliminate SSL handshake overhead per packet
 http_session = requests.Session()
 http_session.headers.update({
     "Authorization": f"Splunk {SPLUNK_TOKEN}",
@@ -149,7 +148,7 @@ def processing_worker():
             # --- PROJECT APEX PHYSICS LOGIC ---
             if engine_temp > THERMAL_THRESHOLD_C:
                 thermal_mode = "HIGH_COMPRESSION" 
-                # Transient Torque Anomaly Logic
+                # Transient Torque Anomaly Logic (Corrected Terminology)
                 if energy_joules > 80.0: 
                     compliance_status = "CRITICAL: TORQUE_ANOMALY"
             elif energy_joules > ENERGY_LIMIT_J:
@@ -158,7 +157,7 @@ def processing_worker():
             # CONSTRUCT SPLUNK PAYLOAD
             telemetry_event = {
                 "time": timestamp,
-                "host": "mtc-edge-node", 
+                "host": socket.gethostname(), 
                 "source": "atlas_edge_bridge",
                 "sourcetype": "mcl_telemetry",
                 "index": "project_apex", 
@@ -173,7 +172,7 @@ def processing_worker():
                 }
             }
             
-            # Heavy I/O Operation (HTTP POST)
+            # Heavy I/O Operation (HTTP POST) offloaded to worker
             send_to_splunk(telemetry_event, car_id)
             PACKET_QUEUE.task_done()
             
@@ -193,6 +192,7 @@ def main():
     
     logger.info(f"Project Apex Validator Active on {LISTEN_IP}:{LISTEN_PORT}")
     logger.info(f"Architecture: Multi-Threaded Producer/Consumer (Queue: 2048)")
+    logger.info(f"Logic Profile: MCL40_TRANSIENT_TORQUE_V2")
     
     # Start the Worker Thread
     worker = threading.Thread(target=processing_worker, daemon=True)
@@ -221,4 +221,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
