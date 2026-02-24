@@ -27,45 +27,39 @@ The 2026 Technical Regulations introduce two conflicting variables that threaten
 To support 60Hz telemetry without packet loss on constrained edge hardware (Cisco IOx), the system utilizes a **Threaded Producer-Consumer** architecture.
 
 ``` mermaid
-flowchart TD  
-    %% Subgraph for the External Data Source  
-    subgraph Trackside \[1. Ingest Producer\]    
-        ATLAS\[ATLAS Forwarder\]   
-        \-- UDP Multicast\<br\>Port 20777 \--\> Socket\[UDP Socket\]  
-        Socket \--\> Buffer\[OS Receive Buffer\<br\>SO\_RCVBUF: 1MB\]  
+flowchart TD
+    subgraph Trackside ["1. Ingest Producer"]
+        ATLAS["ATLAS Forwarder"] -- "UDP Multicast (Port 20777)" --> Socket["UDP Socket"]
+        Socket --> Buffer["OS Receive Buffer (1MB)"]
     end
 
-    %% Subgraph for the Internal Logic within the Python Script  
-    subgraph EdgeCompute \[2. Edge Compute Logic Gate\]    
-        Buffer \-- Raw Bytes \--\> PyMain\[Main Thread:\<br\>production\_validator\_service\_prod.py\]  
-        PyMain \-- Enqueue \--\> Queue\[(Thread-Safe Queue)\]  
-        Queue \-- Dequeue \--\> Worker\[Worker Thread\]  
-        Worker \--\> Decode\[Decode Binary Structs\]  
-        Decode \--\> LogicGate{Logic Gate:\<br\>Temp \> 130°C\<br\>AND\<br\>Energy \> 100J}  
+    subgraph EdgeCompute ["2. Edge Compute Logic Gate"]
+        Buffer -- "Raw Bytes" --> PyMain["Main Thread (Validator)"]
+        PyMain -- "Enqueue" --> Queue[/"Thread-Safe Queue"/]
+        Queue -- "Dequeue" --> Worker["Worker Thread"]
+        Worker --> Decode["Decode Binary Structs"]
+        Decode --> LogicGate{"Logic Gate:<br>Temp > 130°C<br>AND<br>Energy > 100J"}
     end
 
-    %% Subgraph for the Transport Layer  
-    subgraph TransportLayer \[3. Transport Consumer\]  
-        LogicGate \-- Nominal \--\> Drop\[Drop Packet\]  
-        LogicGate \-- Critical Anomaly \--\> Session\[Persistent HTTPS Session\<br\>TCP Keep-Alive\]  
+    subgraph TransportLayer ["3. Transport Consumer"]
+        LogicGate -- "Nominal" --> Drop["Drop Packet"]
+        LogicGate -- "Critical Anomaly" --> Session["HTTPS Session (Keep-Alive)"]
     end
 
-    %% Subgraph for Visualization  
-    subgraph Visualization \[4. Visualization\]  
-        Session \-- JSON Payload \--\> Splunk\[Splunk Heavy Forwarder\]  
-        Splunk \--\> Dashboard\[Mission Control Dashboard\]  
-        Dashboard \-- Trigger \--\> GhostPanel\[Ghost Panel Active:\<br\>Transient Torque Anomaly\]  
+    subgraph Visualization ["4. Visualization"]
+        Session -- "JSON Payload" --> Splunk["Splunk Heavy Forwarder"]
+        Splunk --> Dashboard["Mission Control Dashboard"]
+        Dashboard -- "Trigger" --> GhostPanel["Ghost Panel Active:<br>Transient Torque Anomaly"]
     end
 
-    %% Styling for "Executive/Dark Mode" Look  
-    classDef source fill:\#333,stroke:\#fff,stroke-width:2px,color:\#fff;  
-    classDef process fill:\#0052cc,stroke:\#fff,stroke-width:2px,color:\#fff;  
-    classDef buffer fill:\#ff9900,stroke:\#fff,stroke-width:2px,color:\#000;  
-    classDef alert fill:\#DC4E41,stroke:\#fff,stroke-width:2px,color:\#fff;
+    classDef source fill:#333,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef process fill:#0052cc,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef buffer fill:#ff9900,stroke:#fff,stroke-width:2px,color:#000;
+    classDef alert fill:#DC4E41,stroke:#fff,stroke-width:2px,color:#fff;
 
-    class ATLAS,Socket,Splunk source;  
-    class PyMain,Worker,Decode,Session,Dashboard process;  
-    class Buffer,Queue buffer;  
+    class ATLAS,Socket,Splunk source;
+    class PyMain,Worker,Decode,Session,Dashboard process;
+    class Buffer,Queue buffer;
     class LogicGate,GhostPanel alert;
 ```
 
