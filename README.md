@@ -141,7 +141,7 @@ If testing locally without Docker:
 
 \# 1\. Clone the Repo    
 ```
-it clone \[https://github.com/SecurityCyberGeek/project-apex-telemetry.git\](https://github.com/SecurityCyberGeek/project-apex-telemetry.git)  
+git clone \[https://github.com/SecurityCyberGeek/project-apex-telemetry.git\](https://github.com/SecurityCyberGeek/project-apex-telemetry.git)  
 cd project-apex-telemetry
 ```
 
