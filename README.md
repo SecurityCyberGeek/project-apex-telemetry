@@ -29,39 +29,39 @@ The 2026 Technical Regulations introduce two conflicting variables that threaten
 To support 60Hz telemetry without packet loss on constrained edge hardware (Cisco IOx), the system utilizes a **Threaded Producer-Consumer** architecture.
 
 ``` mermaid
-flowchart LR  
-    subgraph Trackside \["1. Ingest Producer"\]  
-        ATLAS\["ATLAS Forwarder"\] \-- "UDP Multicast\\n(Port 20777)" \--\> Socket\["UDP Socket"\]  
-        Socket \--\> Buffer\["OS Receive Buffer\\n(1MB)"\]  
-    end  
-      
-    subgraph EdgeCompute \["2. Edge Compute Logic Gate"\]  
-        Buffer \-- "Raw Bytes" \--\> PyMain\["Main Thread\\n(Validator)"\]  
-        PyMain \-- "Enqueue" \--\> Queue\[/"Thread-Safe Queue\\n(2048 packets)"/\]  
-        Queue \-- "Dequeue" \--\> Worker\["Worker Thread"\]  
-        Worker \--\> Decode\["Decode Binary Structs"\]  
-        Decode \--\> LogicGate{"Logic Gate:\\nTemp \> 130°C\\nAND\\nEnergy \> 80J\\nAND\\nRide Height \< 2.5mm"}  
-    end  
-      
-    subgraph TransportLayer \["3. Transport Consumer"\]  
-        LogicGate \-- "Nominal" \--\> Drop\["Drop Packet"\]  
-        LogicGate \-- "Critical Anomaly" \--\> Session\["HTTPS Session\\n(Keep-Alive)"\]  
-    end  
-      
-    subgraph Visualization \["4. Visualization"\]  
-        Session \-- "JSON Payload" \--\> Splunk\["Splunk Heavy Forwarder"\]  
-        Splunk \--\> Dashboard\["Mission Control Dashboard"\]  
-        Dashboard \-- "Trigger" \--\> GhostPanel\["Ghost Panel Active:\\nTransient Torque Anomaly"\]  
-    end  
-      
-    classDef source fill:\#333,stroke:\#fff,stroke-width:2px,color:\#fff;  
-    classDef process fill:\#0052cc,stroke:\#fff,stroke-width:2px,color:\#fff;  
-    classDef buffer fill:\#ff9900,stroke:\#fff,stroke-width:2px,color:\#000;  
-    classDef alert fill:\#DC4E41,stroke:\#fff,stroke-width:2px,color:\#fff;  
-      
-    class ATLAS,Socket,Splunk source;  
-    class PyMain,Worker,Decode,Session,Dashboard process;  
-    class Buffer,Queue buffer;  
+flowchart LR
+    subgraph Trackside ["1. Ingest Producer"]
+        ATLAS["ATLAS Forwarder"] -- "UDP Multicast\n(Port 20777)" --> Socket["UDP Socket"]
+        Socket --> Buffer["OS Receive Buffer\n(1MB)"]
+    end
+
+    subgraph EdgeCompute ["2. Edge Compute Logic Gate"]
+        Buffer -- "Raw Bytes" --> PyMain["Main Thread\n(Validator)"]
+        PyMain -- "Enqueue" --> Queue[/"Thread-Safe Queue\n(2048 packets)"/]
+        Queue -- "Dequeue" --> Worker["Worker Thread"]
+        Worker --> Decode["Decode Binary Structs"]
+        Decode --> LogicGate{"Logic Gate:\nTemp > 130°C\nAND\nEnergy > 80J\nAND\nRide Height < 2.5mm"}
+    end
+
+    subgraph TransportLayer ["3. Transport Consumer"]
+        LogicGate -- "Nominal" --> Drop["Drop Packet"]
+        LogicGate -- "Critical Anomaly" --> Session["HTTPS Session\n(Keep-Alive)"]
+    end
+
+    subgraph Visualization ["4. Visualization"]
+        Session -- "JSON Payload" --> Splunk["Splunk Heavy Forwarder"]
+        Splunk --> Dashboard["Mission Control Dashboard"]
+        Dashboard -- "Trigger" --> GhostPanel["Ghost Panel Active:\nTransient Torque Anomaly"]
+    end
+
+    classDef source fill:#333,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef process fill:#0052cc,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef buffer fill:#ff9900,stroke:#fff,stroke-width:2px,color:#000;
+    classDef alert fill:#DC4E41,stroke:#fff,stroke-width:2px,color:#fff;
+
+    class ATLAS,Socket,Splunk source;
+    class PyMain,Worker,Decode,Session,Dashboard process;
+    class Buffer,Queue buffer;
     class LogicGate,GhostPanel alert;
 ```
 
