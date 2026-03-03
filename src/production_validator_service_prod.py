@@ -13,7 +13,6 @@
 #  limitations under the License.
 
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 """
 PROJECT APEX: ACTIVE AERO VALIDATION SERVICE (PRODUCTION)
 ---------------------------------------------------------
@@ -62,7 +61,14 @@ LISTEN_PORT = int(os.getenv("LISTEN_PORT", "20777"))
 # --- PHYSICS CONSTANTS (MCL40) ---
 CAR_MASS_KG = 798.0
 THERMAL_THRESHOLD_C = 130.0 
-ENERGY_LIMIT_J = 100.0       
+ENERGY_LIMIT_J = 100.0             # Standard oscillation limit
+THERMAL_ENERGY_LIMIT_J = 80.0      # Reduced threshold when floor is thermally loaded
+AERO_STALL_RH_MM = 28.0            # Absolute ride height where diffuser stall becomes imminent
+
+# Packet format: [timestamp(d)][car_id(10s)][speed_kph(f)][ride_height_mm(f)][vert_vel_ms(f)][engine_temp_c(f)]
+# Total: 34 bytes | Source: F1 2026 simulator UDP broadcast schema
+PACKET_FORMAT = '<d10sffff'
+PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
 
 # --- THREADING CONFIGURATION ---
 # Queue size of 2048 handles ~34 seconds of buffered telemetry at 60Hz
@@ -76,10 +82,7 @@ last_error_log_time = 0.0
 # --- OPTIMIZATION: PERSISTENT SESSION ---
 # Enables TCP Keep-Alive to eliminate SSL handshake overhead per packet
 http_session = requests.Session()
-http_session.headers.update({
-    "Authorization": f"Splunk {SPLUNK_TOKEN}",
-    "Content-Type": "application/json"
-})
+# Headers will be initialized in main() after token validation
 
 def calculate_vertical_energy(vz: float) -> float:
     return 0.5 * CAR_MASS_KG * (vz ** 2)
@@ -87,7 +90,7 @@ def calculate_vertical_energy(vz: float) -> float:
 def send_to_splunk(payload: dict, car_id: str):
     global last_success_log_time, last_error_log_time
     
-    # Security Gate: Prevent data leakage if the token is not configured
+    # Security Gate: Prevent data leakage if token is not configured
     if SPLUNK_TOKEN == "REPLACE_WITH_SECURE_TOKEN":
         current_time = time.time()
         if current_time - last_error_log_time >= 5.0:
@@ -128,8 +131,8 @@ def processing_worker():
 
         try:
             # --- BULLETPROOF UNPACKING ---
-            if len(data) == struct.calcsize('<d10sffff'):
-                unpacked = struct.unpack('<d10sffff', data)
+            if len(data) == PACKET_SIZE:
+                unpacked = struct.unpack(PACKET_FORMAT, data)
             else:
                 PACKET_QUEUE.task_done()
                 continue 
@@ -148,9 +151,13 @@ def processing_worker():
             # --- PROJECT APEX PHYSICS LOGIC ---
             if engine_temp > THERMAL_THRESHOLD_C:
                 thermal_mode = "HIGH_COMPRESSION" 
-                # Transient Torque Anomaly Logic (Corrected Terminology)
-                if energy_joules > 80.0: 
-                    compliance_status = "CRITICAL: TORQUE_ANOMALY"
+                squat_detected = ride_height < AERO_STALL_RH_MM
+                
+                # Dual-Signal Validation: Thermal Expansion + Kinetic Energy + Aero Squat
+                if energy_joules > THERMAL_ENERGY_LIMIT_J and squat_detected: 
+                    compliance_status = "CRITICAL: TORQUE_ANOMALY_CONFIRMED"
+                elif energy_joules > THERMAL_ENERGY_LIMIT_J:
+                    compliance_status = "WARNING: TORQUE_ANOMALY_UNCONFIRMED"
             elif energy_joules > ENERGY_LIMIT_J:
                 compliance_status = "VIOLATION_RISK"
 
@@ -184,6 +191,12 @@ def processing_worker():
 def main():
     global QUEUE_FULL_WARNING_COOLDOWN
     
+    # Initialize session headers here after validating environment
+    http_session.headers.update({
+        "Authorization": f"Splunk {SPLUNK_TOKEN}",
+        "Content-Type": "application/json"
+    })
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((LISTEN_IP, LISTEN_PORT))
     
@@ -200,13 +213,13 @@ def main():
 
     while True:
         try:
-            # Hot Loop: Only receives data and puts it in the queue. 
+            # Hot Loop: Only receives data and puts it in queue. 
             data, _ = sock.recvfrom(1024)
             
             try:
                 PACKET_QUEUE.put_nowait(data)
             except queue.Full:
-                # Tail Drop Strategy: If the queue is full, drop new packets to protect memory
+                # Tail Drop Strategy: If queue is full, drop new packets to protect memory
                 current_time = time.time()
                 if current_time - QUEUE_FULL_WARNING_COOLDOWN >= 5.0:
                     logger.warning("QUEUE FULL: Dropping packets. Check Splunk connectivity.")
@@ -217,6 +230,7 @@ def main():
             http_session.close() 
             break
         except Exception as e:
+            logger.error(f"Main loop exception: {e}")
             continue
 
 if __name__ == "__main__":
