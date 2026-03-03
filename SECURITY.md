@@ -14,7 +14,7 @@ This is a research prototype targeting production F1 infrastructure. If you disc
 a vulnerability (e.g., UDP spoofing, HEC token leakage, replay attack surface),
 please **do not open a public issue**.
 
-**Contact:** timothy@securitycybergeek.com  
+**Contact:** info@securitycybergeek.com  
 Response target: 48 hours
 
 ---
