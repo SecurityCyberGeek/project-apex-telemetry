@@ -138,22 +138,20 @@ docker run \--rm \-it \\
 ### **💻 Local Testing (Python)**
 
 If testing locally without Docker:
-
-\# 1\. Clone the Repo    
+    
 ```
-git clone \[https://github.com/SecurityCyberGeek/project-apex-telemetry.git\](https://github.com/SecurityCyberGeek/project-apex-telemetry.git)  
+# 1. Clone the Repo
+git clone [https://github.com/SecurityCyberGeek/project-apex-telemetry.git](https://github.com/SecurityCyberGeek/project-apex-telemetry.git)
 cd project-apex-telemetry
-```
 
-\# 2\. Set Environment Variables (CISSP Standard: No Hardcoded Tokens)    
-```
-export SPLUNK\_HEC\_URL="\[https://splunk-hec.mclaren.internal:8088/services/collector/event\](https://splunk-hec.mclaren.internal:8088/services/collector/event)"  
-export SPLUNK\_TOKEN="\[SECURE\_INJECTED\_TOKEN\]"  
-export LISTEN\_PORT=20777
-```
+# 2. Set Environment Variables (CISSP Standard: No Hardcoded Tokens)
+export SPLUNK_HEC_URL="[https://splunk-hec.mclaren.internal:8088/services/collector/event](https://splunk-hec.mclaren.internal:8088/services/collector/event)"
+export SPLUNK_TOKEN="[SECURE_INJECTED_TOKEN]"
+export LISTEN_PORT=20777
 
-\# 3\. Run the Validator    
-```python3 production\_validator\_service\_prod.py```
+# 3. Run the Validator
+python3 production_validator_service_prod.py
+```
 
 ### **Verification**
 
