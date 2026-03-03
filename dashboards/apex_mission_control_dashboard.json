@@ -28,8 +28,12 @@
 			"context": {
 				"compliance_status_colors": [
 					{
-						"match": "CRITICAL: TORQUE_ANOMALY",
+						"match": "CRITICAL: TORQUE_ANOMALY_CONFIRMED",
 						"value": "#DC4E41"
+					},
+					{
+						"match": "WARNING: TORQUE_ANOMALY_UNCONFIRMED",
+						"value": "#FF8000"
 					},
 					{
 						"match": "VIOLATION_RISK",
