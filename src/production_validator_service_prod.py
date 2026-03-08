@@ -14,20 +14,27 @@
 
 #!/usr/bin/env python3
 """
-PROJECT APEX: ACTIVE AERO VALIDATION SERVICE (PRODUCTION)
----------------------------------------------------------
+PROJECT APEX: ACTIVE AERO & INTEGRITY VALIDATION SERVICE (PRODUCTION)
+---------------------------------------------------------------------
 Context:    F1 2026 Technical Regulations (MCL40)
 Deployment: Cisco IOx Edge Compute / MTC Mission Control
 Author:     Timothy D. Harmon, CISSP
 
 DESCRIPTION:
-This service acts as the 'Edge Brain' for the Project Apex framework. 
-It utilizes a multi-threaded producer-consumer architecture to process 
-high-frequency (60Hz) UDP telemetry from the ATLAS forwarder.
+This service acts as the 'Edge Brain' for the Project Apex framework.
+It consumes high-frequency (60Hz) UDP telemetry from the ATLAS forwarder
+and computes vertical energy, thermal mode, and basic integrity severity.
 
-Its primary function is to detect **Transient Torque Anomalies** caused by 
-Power Unit thermal expansion (16:1 -> 18:1 delta), flagging platform 
-instability and enforcing the FIA 100J vertical oscillation limit.
+It emits enriched events to Splunk with:
+
+  - compliance_status     (legacy physics classification)
+  - apex_severity         (GREEN / YELLOW / RED)
+  - apex_status           (WITHIN_SPEC / TRENDING / ANOMALY_DETECTED)
+  - apex_message          (short human-readable description)
+  - sensor_id             (logical sensor / channel identifier)
+
+The detailed natural-language YELLOW/RED text lives in Splunk as
+'apex_message' or can be expanded later as needed.
 """
 
 import socket
@@ -48,30 +55,26 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("ApexValidator")
 
 # --- SUPPRESS SSL WARNINGS ---
-# Essential for air-gapped garage networks utilizing self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- PRODUCTION CONFIGURATION (ENV VARS) ---
-# SECURITY FIX: Default to McLaren Internal HTTPS
 SPLUNK_HEC_URL = os.getenv("SPLUNK_HEC_URL", "https://splunk-hec.mclaren.internal:8088/services/collector/event")
 SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN", "REPLACE_WITH_SECURE_TOKEN")
-LISTEN_IP = os.getenv("LISTEN_IP", "0.0.0.0") 
+LISTEN_IP = os.getenv("LISTEN_IP", "0.0.0.0")
 LISTEN_PORT = int(os.getenv("LISTEN_PORT", "20777"))
 
 # --- PHYSICS CONSTANTS (MCL40) ---
 CAR_MASS_KG = 798.0
-THERMAL_THRESHOLD_C = 130.0 
-ENERGY_LIMIT_J = 100.0             # Standard oscillation limit
-THERMAL_ENERGY_LIMIT_J = 80.0      # Reduced threshold when floor is thermally loaded
-AERO_STALL_RH_MM = 28.0            # Absolute ride height where diffuser stall becomes imminent
+THERMAL_THRESHOLD_C = 130.0
+ENERGY_LIMIT_J = 100.0           # Standard oscillation limit
+THERMAL_ENERGY_LIMIT_J = 80.0    # Reduced threshold when floor is thermally loaded
+AERO_STALL_RH_MM = 28.0          # Ride height where diffuser stall becomes imminent
 
 # Packet format: [timestamp(d)][car_id(10s)][speed_kph(f)][ride_height_mm(f)][vert_vel_ms(f)][engine_temp_c(f)]
-# Total: 34 bytes | Source: F1 2026 simulator UDP broadcast schema
 PACKET_FORMAT = '<d10sffff'
 PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
 
 # --- THREADING CONFIGURATION ---
-# Queue size of 2048 handles ~34 seconds of buffered telemetry at 60Hz
 PACKET_QUEUE = queue.Queue(maxsize=2048)
 QUEUE_FULL_WARNING_COOLDOWN = 0.0
 
@@ -79,18 +82,56 @@ QUEUE_FULL_WARNING_COOLDOWN = 0.0
 last_success_log_time = 0.0
 last_error_log_time = 0.0
 
-# --- OPTIMIZATION: PERSISTENT SESSION ---
-# Enables TCP Keep-Alive to eliminate SSL handshake overhead per packet
+# --- HTTP SESSION ---
 http_session = requests.Session()
-# Headers will be initialized in main() after token validation
 
 def calculate_vertical_energy(vz: float) -> float:
     return 0.5 * CAR_MASS_KG * (vz ** 2)
 
+def classify_event(engine_temp: float, energy_joules: float, ride_height: float):
+    """
+    Returns:
+        compliance_status, apex_severity, apex_status, apex_message
+    """
+    compliance_status = "LEGAL"
+    apex_severity = "GREEN"
+    apex_status = "WITHIN_SPEC"
+    apex_message = "Within expected physics envelope."
+
+    thermal_mode = "STANDARD"
+    squat_detected = False
+
+    if engine_temp > THERMAL_THRESHOLD_C:
+        thermal_mode = "HIGH_COMPRESSION"
+        squat_detected = ride_height < AERO_STALL_RH_MM
+
+        if energy_joules > THERMAL_ENERGY_LIMIT_J and squat_detected:
+            compliance_status = "CRITICAL: TORQUE_ANOMALY_CONFIRMED"
+            apex_severity = "RED"
+            apex_status = "ANOMALY_DETECTED"
+            apex_message = "High engine temp, high vertical energy, and aero squat detected (torque anomaly)."
+        elif energy_joules > THERMAL_ENERGY_LIMIT_J:
+            compliance_status = "WARNING: TORQUE_ANOMALY_UNCONFIRMED"
+            apex_severity = "YELLOW"
+            apex_status = "TRENDING"
+            apex_message = "High engine temp and elevated vertical energy; monitor for torque anomaly."
+        else:
+            # High temperature but energy still within threshold
+            apex_severity = "YELLOW"
+            apex_status = "TRENDING"
+            apex_message = "Engine temperature above nominal; monitor vertical energy and ride height."
+    else:
+        if energy_joules > ENERGY_LIMIT_J:
+            compliance_status = "VIOLATION_RISK"
+            apex_severity = "YELLOW"
+            apex_status = "TRENDING"
+            apex_message = "Vertical energy above nominal limit; monitor for oscillation risk."
+
+    return compliance_status, apex_severity, apex_status, apex_message, thermal_mode
+
 def send_to_splunk(payload: dict, car_id: str):
     global last_success_log_time, last_error_log_time
-    
-    # Security Gate: Prevent data leakage if token is not configured
+
     if SPLUNK_TOKEN == "REPLACE_WITH_SECURE_TOKEN":
         current_time = time.time()
         if current_time - last_error_log_time >= 5.0:
@@ -99,9 +140,8 @@ def send_to_splunk(payload: dict, car_id: str):
         return
 
     try:
-        # verify=False is required for internal self-signed certs (Air-Gap Standard)
         response = http_session.post(SPLUNK_HEC_URL, json=payload, verify=False, timeout=0.5)
-        
+
         if response.status_code == 200:
             current_time = time.time()
             if current_time - last_success_log_time >= 60.0:
@@ -112,86 +152,75 @@ def send_to_splunk(payload: dict, car_id: str):
             if current_time - last_error_log_time >= 5.0:
                 logger.error(f"Splunk HEC Rejection: {response.text}")
                 last_error_log_time = current_time
-            
+
     except Exception as e:
         current_time = time.time()
         if current_time - last_error_log_time >= 5.0:
             logger.warning(f"HEC Connection Failed: {e}")
             last_error_log_time = current_time
 
-# --- WORKER THREAD (CONSUMER) ---
 def processing_worker():
     """Reads packets from Queue, parses physics, sends to Splunk."""
     while True:
         try:
-            # Block for 1 sec waiting for data to prevent CPU spin
             data = PACKET_QUEUE.get(timeout=1.0)
         except queue.Empty:
             continue
 
         try:
-            # --- BULLETPROOF UNPACKING ---
-            if len(data) == PACKET_SIZE:
-                unpacked = struct.unpack(PACKET_FORMAT, data)
-            else:
+            if len(data) != PACKET_SIZE:
                 PACKET_QUEUE.task_done()
-                continue 
+                continue
 
+            unpacked = struct.unpack(PACKET_FORMAT, data)
             timestamp = unpacked[0]
-            car_id = unpacked[1].decode('utf-8').strip('\x00')
+            raw_car_id = unpacked[1].decode('utf-8', errors='ignore')
+            car_id = raw_car_id.strip('\x00')
             speed = unpacked[2]
             ride_height = unpacked[3]
             vert_vel = unpacked[4]
-            engine_temp = unpacked[5] 
+            engine_temp = unpacked[5]
 
             energy_joules = calculate_vertical_energy(vert_vel)
-            compliance_status = "LEGAL"
-            thermal_mode = "STANDARD"
 
-            # --- PROJECT APEX PHYSICS LOGIC ---
-            if engine_temp > THERMAL_THRESHOLD_C:
-                thermal_mode = "HIGH_COMPRESSION" 
-                squat_detected = ride_height < AERO_STALL_RH_MM
-                
-                # Dual-Signal Validation: Thermal Expansion + Kinetic Energy + Aero Squat
-                if energy_joules > THERMAL_ENERGY_LIMIT_J and squat_detected: 
-                    compliance_status = "CRITICAL: TORQUE_ANOMALY_CONFIRMED"
-                elif energy_joules > THERMAL_ENERGY_LIMIT_J:
-                    compliance_status = "WARNING: TORQUE_ANOMALY_UNCONFIRMED"
-            elif energy_joules > ENERGY_LIMIT_J:
-                compliance_status = "VIOLATION_RISK"
+            compliance_status, apex_severity, apex_status, apex_message, thermal_mode = classify_event(
+                engine_temp, energy_joules, ride_height
+            )
 
-            # CONSTRUCT SPLUNK PAYLOAD
+            # For this prototype, we treat vertical platform as the primary sensor_id
+            sensor_id = "VERT_PLATFORM"
+
             telemetry_event = {
                 "time": timestamp,
-                "host": socket.gethostname(), 
+                "host": socket.gethostname(),
                 "source": "atlas_edge_bridge",
                 "sourcetype": "mcl_telemetry",
-                "index": "project_apex", 
+                "index": "project_apex",
                 "event": {
                     "car_id": car_id,
+                    "sensor_id": sensor_id,
                     "speed_kph": int(round(speed)),
                     "vertical_energy": round(energy_joules, 2),
                     "engine_temp_c": round(engine_temp, 1),
                     "rear_rh_mm": round(ride_height, 2),
                     "compliance_status": compliance_status,
-                    "thermal_mode": thermal_mode
+                    "thermal_mode": thermal_mode,
+                    "apex_severity": apex_severity,
+                    "apex_status": apex_status,
+                    "apex_message": apex_message
                 }
             }
-            
-            # Heavy I/O Operation (HTTP POST) offloaded to worker
+
             send_to_splunk(telemetry_event, car_id)
             PACKET_QUEUE.task_done()
-            
+
         except Exception as e:
             logger.error(f"Worker Exception: {e}")
             PACKET_QUEUE.task_done()
 
-# --- MAIN THREAD (PRODUCER) ---
 def main():
     global QUEUE_FULL_WARNING_COOLDOWN
-    
-    # Initialize session headers here after validating environment
+
     http_session.headers.update({
         "Authorization": f"Splunk {SPLUNK_TOKEN}",
         "Content-Type": "application/json"
@@ -199,35 +228,30 @@ def main():
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((LISTEN_IP, LISTEN_PORT))
-    
-    # OS Buffer Optimization (1MB) to prevent UDP drops
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
-    
+
     logger.info(f"Project Apex Validator Active on {LISTEN_IP}:{LISTEN_PORT}")
-    logger.info(f"Architecture: Multi-Threaded Producer/Consumer (Queue: 2048)")
-    logger.info(f"Logic Profile: MCL40_TRANSIENT_TORQUE_V2")
-    
-    # Start the Worker Thread
+    logger.info("Architecture: Multi-Threaded Producer/Consumer (Queue: 2048)")
+    logger.info("Logic Profile: MCL40_TRANSIENT_TORQUE_V2_WITH_SEVERITY")
+
     worker = threading.Thread(target=processing_worker, daemon=True)
     worker.start()
 
     while True:
         try:
-            # Hot Loop: Only receives data and puts it in queue. 
             data, _ = sock.recvfrom(1024)
-            
+
             try:
                 PACKET_QUEUE.put_nowait(data)
             except queue.Full:
-                # Tail Drop Strategy: If queue is full, drop new packets to protect memory
                 current_time = time.time()
                 if current_time - QUEUE_FULL_WARNING_COOLDOWN >= 5.0:
                     logger.warning("QUEUE FULL: Dropping packets. Check Splunk connectivity.")
                     QUEUE_FULL_WARNING_COOLDOWN = current_time
-                    
+
         except KeyboardInterrupt:
             logger.info("Stopping Validator Service...")
-            http_session.close() 
+            http_session.close()
             break
         except Exception as e:
             logger.error(f"Main loop exception: {e}")
