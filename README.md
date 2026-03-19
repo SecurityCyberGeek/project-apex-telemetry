@@ -1,4 +1,4 @@
-# **Project Apex: MCL40 Active Aero Validation Engine**
+# **Project Apex: MCL40 Real-Time Physics Validation System**
 
 ![Status](https://img.shields.io/badge/Status-Deployment%20Ready-success?style=for-the-badge)
 ![Target](https://img.shields.io/badge/Target-F1%202026%20Regulations-orange?style=for-the-badge)
@@ -7,78 +7,72 @@
 
 ## 🏁 What Is Project Apex?
 
-**Project Apex** is a deployment-ready edge validator for F1-style telemetry streams under the 2026 regulations.
+**Project Apex** is a deployment-ready, real-time physics validation system for F1-style telemetry streams under the 2026 technical regulations.
 
-It sits on a trackside edge node, listens to the same 60 Hz UDP telemetry feed as the team’s primary system (e.g., ATLAS), computes **vertical energy** from vertical velocity, classifies each packet’s physics state and integrity severity, and forwards enriched JSON events to **Splunk Enterprise** via HEC.
+It sits on a trackside edge node, listens to the same 60 Hz UDP telemetry feed as the team’s primary system (e.g., ATLAS), computes vertical energy from vertical velocity, classifies each packet’s physics state and integrity severity, and forwards enriched JSON events to Splunk Enterprise via HEC.
 
-The v1.0 implementation focuses on detecting **transient torque anomalies** and **vertical oscillation risk** driven by power unit thermal expansion and platform squat. It does **not** replace existing telemetry infrastructure; it adds an integrity layer that turns “data is flowing” into “data is physics-validated and severity-tagged”.
+The v1.1 specification addresses three core gaps exposed during the opening races of the 2026 season:
+
+1. **Unexpected power unit state transitions** — including battery-empty-to-surge events that current telemetry systems cannot predict (ref: Oscar Piastri, Melbourne 2026)
+2. **Dynamic FIA regulatory boundaries** — energy deployment limits that change mid-weekend via Technical Directive (ref: Australian GP Friday → Saturday TD change)
+3. **Customer team data opacity** — McLaren’s documented lack of Mercedes HPP transparency creates validation blind spots that independent physics validation addresses directly
+
+Project Apex does not replace existing telemetry infrastructure. It adds an integrity layer that turns *“data is flowing “* into *“data is physics-validated, severity-tagged, and TD-compliant.”*
 
 ---
 
-## 🧠 Physics Model (v1.0)
+## 🧠 Physics Model (v1.1)
 
-Apex v1.0 uses a deliberately simple physics model:
+Apex v1.1 uses a deliberately grounded physics model derived from the 2026 FIA Technical
+Regulations.
 
-- **Inputs per packet (binary struct `<d10sffff>`):**
-  - `timestamp` (double)
-  - `car_id` (10-byte string)
-  - `speed_kph` (float)
-  - `ride_height_mm` (float)
-  - `vert_vel_ms` (float)
-  - `engine_temp_c` (float)
+### Inputs per packet (binary struct `<d10sffff>`)
 
-- **Derived metric: vertical energy**
+| Field | Type | Description |
+|---|---|---|
+| `timestamp` | double | Unix timestamp |
+| `car_id` | 10-byte string | Car identifier |
+| `speed_kph` | float | Vehicle speed |
+| `front_ride_height_mm` | float | Front ride height |
+| `vertical_velocity_ms` | float | Vertical velocity (Z-axis) |
+| `engine_temp_c` | float | Power unit temperature |
 
-  \[
-  E = \frac{1}{2} \cdot m \cdot v_z^2
-  \]
+### Derived metric: Vertical Energy
 
-  where `m = 798.0 kg` and `v_z = vert_vel_ms`.
+$$E = \frac{1}{2} \cdot m \cdot v_z^2$$
 
-- **Thresholds:**
-  - `THERMAL_THRESHOLD_C = 130.0`
-  - `ENERGY_LIMIT_J = 100.0`
-  - `THERMAL_ENERGY_LIMIT_J = 80.0`
-  - `AERO_STALL_RH_MM = 28.0`
+Where `m = 798.0 kg` (MCL40 minimum mass) and `v_z = vertical_velocity_ms`.
 
-- **Classification (per event):**
-  - `compliance_status` (LEGAL / VIOLATION_RISK / WARNING / CRITICAL)
-  - `thermal_mode` (STANDARD / HIGH_COMPRESSION)
-  - `apex_severity` (GREEN / YELLOW / RED)
-  - `apex_status` (WITHIN_SPEC / TRENDING / ANOMALY_DETECTED)
-  - `apex_message` (short human-readable description)
-  - `sensor_id` (currently `"VERT_PLATFORM"`)
-
-Example logic (simplified):
+### Thresholds
 
 ```python
-if engine_temp > THERMAL_THRESHOLD_C:
-    thermal_mode = "HIGH_COMPRESSION"
-    squat_detected = ride_height < AERO_STALL_RH_MM
-
-    if energy_joules > THERMAL_ENERGY_LIMIT_J and squat_detected:
-        compliance_status = "CRITICAL: TORQUE_ANOMALY_CONFIRMED"
-        apex_severity = "RED"
-        apex_status = "ANOMALY_DETECTED"
-    elif energy_joules > THERMAL_ENERGY_LIMIT_J:
-        compliance_status = "WARNING: TORQUE_ANOMALY_UNCONFIRMED"
-        apex_severity = "YELLOW"
-        apex_status = "TRENDING"
-    else:
-        apex_severity = "YELLOW"
-        apex_status = "TRENDING"
-else:
-    if energy_joules > ENERGY_LIMIT_J:
-        compliance_status = "VIOLATION_RISK"
-        apex_severity = "YELLOW"
-        apex_status = "TRENDING"
+CAR_MASS_KG             = 798.0
+THERMAL_THRESHOLD_C     = 130.0   # Above this: HIGH_COMPRESSION mode
+ENERGY_LIMIT_J          = 100.0   # Standard oscillation limit
+THERMAL_ENERGY_LIMIT_J  = 80.0    # Reduced limit when thermally loaded
+AERO_STALL_RH_MM        = 28.0    # Rear ride height stall-risk threshold
 ```
 
-### **🧠 Validation Logic**
+### **Classification (per event):**
+| Field | Values |
+|---|---|
+| `compliance_status` | LEGAL / VIOLATION_RISK / WARNING / CRITICAL |
+| `thermal_mode` | STANDARD / HIGH_COMPRESSION |
+| `apex_severity` | GREEN / YELLOW / RED |
+| `apex_status` | WITHIN_SPEC / TRENDING / ANOMALY_DETECTED |
+| `apex_message` | short human-readable description |
+| `sensor_id` | currently `"VERT_PLATFORM"` |
 
-Apex v1.0 uses vertical energy, engine temperature, and rear ride height to classify
-each event into a compliance and severity state. The logic below matches
-`production_validator_service_prod.py` exactly.
+### **Severity Levels and Actions**
+| Severity | Condition | Apex Status | Action |
+|---|---|---|---|
+| GREEN | Energy < 100 J, Temp < 130°C | `WITHIN_SPEC` | Log Only |
+| YELLOW | Energy >= 100 J OR Temp >= 130°C | `TRENDING` | Engineer Notification |
+| RED | Energy >= 100 J + Temp >= 130°C + RH <= 28mm | `ANOMALY_DETECTED` | Immediate alert to race engineer and driver |
+
+## **🧠 Validation Logic**
+
+Apex v1.1 uses vertical energy, engine temperature, and rear ride height to classify each event. The logic below matches `production_validator_service_prod_2.py` exactly.
 
 ```python
 CAR_MASS_KG             = 798.0
@@ -96,47 +90,145 @@ def classify_event(engine_temp: float, energy_joules: float, ride_height: float)
     apex_status = "WITHIN_SPEC"
     apex_message = "Within expected physics envelope."
     thermal_mode = "STANDARD"
+    squat_detected = False
 
-    if engine_temp > THERMAL_THRESHOLD_C:
+    if engine_temp >= THERMAL_THRESHOLD_C:
         thermal_mode = "HIGH_COMPRESSION"
-        squat_detected = ride_height < AERO_STALL_RH_MM
+        squat_detected = (ride_height <= AERO_STALL_RH_MM)
 
-        if energy_joules > THERMAL_ENERGY_LIMIT_J and squat_detected:
-            compliance_status = "CRITICAL: TORQUE_ANOMALY_CONFIRMED"
+        if energy_joules >= THERMAL_ENERGY_LIMIT_J and squat_detected:
+            compliance_status = "CRITICAL"
             apex_severity = "RED"
             apex_status = "ANOMALY_DETECTED"
             apex_message = (
                 “High engine temp, high vertical energy, and aero squat”
-                “detected (torque anomaly)."
+                “detected — torque anomaly."
             )
-        elif energy_joules > THERMAL_ENERGY_LIMIT_J:
-            compliance_status = "WARNING: TORQUE_ANOMALY_UNCONFIRMED"
+        elif energy_joules >= THERMAL_ENERGY_LIMIT_J:
+            compliance_status = "WARNING"
             apex_severity = "YELLOW"
             apex_status = "TRENDING"
             apex_message = (
-                “High engine temp and elevated vertical energy;”
+                “High engine temp and elevated vertical energy —”
                 “monitor for torque anomaly."
             )
-        else:
+        elif engine_temp >= THERMAL_THRESHOLD_C:
             apex_severity = "YELLOW"
             apex_status = "TRENDING"
             apex_message = (
-                “Engine temperature above nominal; monitor vertical energy”
+                “Engine temperature above nominal — monitor vertical energy”
                 “and ride height."
             )
     else:
-        if energy_joules > ENERGY_LIMIT_J:
+        if energy_joules >= ENERGY_LIMIT_J:
             compliance_status = "VIOLATION_RISK"
             apex_severity = "YELLOW"
             apex_status = "TRENDING"
             apex_message = (
-                “Vertical energy above nominal limit; monitor for oscillation risk."
+                “Vertical energy above nominal limit — monitor for oscillation risk."
             )
 
     return compliance_status, apex_severity, apex_status, apex_message, thermal_mode
 ```
 
-## **⚙️ System Architecture (v2.1)**
+### 🆕 v1.1 New Validations
+Battery State-of-Charge Monitoring (Post-Piastri)
+Following the Oscar Piastri reconnaissance-lap incident at Melbourne 2026 — where a battery-empty condition produced an unexpected 100 kW surge on cold tyres — Apex v1.1 adds SOC as a classifier input:
+
+```Python
+def classify_event_v11(engine_temp, energy_joules, ride_height,
+                       battery_soc, torque_actual, torque_expected):
+    # Existing thermal/squat logic applies first...
+
+    # Battery-empty surge detection
+    if battery_soc <= 5.0 and (torque_actual - torque_expected) >= 80.0:
+        return “CRITICAL”, “RED”, “ANOMALY_DETECTED”, \
+               “Battery-empty unexpected torque surge detected — driver alert."
+
+    # Recon-lap low-energy state
+    if battery_soc <= 10.0 and ride_height <= 30.0:
+        return “WARNING”, “YELLOW”, “TRENDING”, \
+               “Low battery with reduced ride height — monitor for surge risk."
+```
+
+Expected vs. Actual Torque Differential
+Apex monitors the delta between HPP-expected torque and actual delivered torque:
+| **Delta** | **Severity** |
+|---|---|
+| ± 80 kW | YELLOW - `TRENDING` |
+| ± 100 kW | RED - `ANOMALY_DETECTED` |
+
+This directly addresses HPP data opacity: if the car delivers torque the manufacturer did not predict, Apex flags it regardless of what the manufacturer reports.
+
+Power Reduction Rate Compliance
+FIA 2026 regulations mandate that power reduction cannot exceed 50 kW/s. Apex monitors rate-of-change:
+
+```Python
+torque_rate_of_change = (torque_current - torque_previous) / delta_time
+
+if abs(torque_rate_of_change) > 50000:  # 50 kW/s in watts
+    return “VIOLATION_RISK”, “RED”, “ANOMALY_DETECTED”, \
+           “Power reduction rate exceeds 50 kW/s FIA limit."
+```
+
+Superclipping vs. Lift-and-Coast Recovery Mode Differentiation
+Apex v1.1 differentiates between two recovery scenarios and validates against the correct boundary for each:
+| **Recovery Mode** | **Max Allowed** | **Trigger** |
+|---|---|---|
+| Superclipping | 250 kW | Partial throttle maintained |
+| Lift-and-Coast | 350 kW | Full throttle lift detected |
+
+## ⚡ FIA Technical Directive Dynamic Configuration
+
+The Problem
+At the 2026 Australian Grand Prix, the FIA issued a Technical Directive lowering qualifying recoverable energy from 8.5 MJ to 7.0 MJ between Friday practice and Saturday qualifying — then partially reversed it after team pushback. Hardcoded validation thresholds cannot handle mid-weekend regulatory flux.
+
+Configuration Architecture
+Apex v1.1 introduces a Technical Directive Configuration Layer:
+
+```JSON
+{
+  “event”: “2026_Chinese_GP”,
+  “session": “Qualifying”,
+  "effective_timestamp": "2026-03-14T10:00:00Z",
+  "energy_limits": {
+    “max_recoverable_mj”: 7.0,
+    “race_normal_mj”: 8.0,
+    “race_overtake_mj”: 8.5,
+    “outlap_practice_quali_mj”: 8.5
+  },
+  "power_reduction_limits": {
+    “max_rate_kw_per_s”: 50.0
+  },
+  "recovery_modes": {
+    “superclipping_max_kw”: 250.0,
+    “lift_and_coast_max_kw”: 350.0
+  }
+}
+```
+
+Update Mechanism 
+1. FIA publishes TD via official channels
+
+2. Race engineer uploads TD JSON to Splunk lookup table
+
+3. Apex Validator Service polls the lookup table every 60 seconds
+
+4. New configuration applies to the next telemetry packet batch
+
+Fallback: If TD configuration is unavailable, Apex defaults to the 2026 baseline
+regulations (8.5 MJ recoverable).
+
+Multi-Circuit Energy Harvest Profiles
+Apex v1.1 includes pre-calculated energy harvest profiles for key 2026 circuits:
+| **Circuit** | **Sustained Straight** | **Braking Zones** | **Apex Energy Strategy** |
+|---|---|---|---|
+| Melbourne | 1.4 km (Lakeside) | 4 major zones | High harvest variability |
+| Shanghai | 1.7 km (T11-T14) | 3 major zones | Early depletion, sharp cliff |
+| Suzuka | 1.1 km (T16-T17) | 5 major zones | Balanced recovery |
+| Spa | 2.0 km (Kemmel) | 4 major zones | Longest sustained deployment |
+
+## **⚙️ System Architecture (v1.1)**
 
 Apex uses a threaded producer–consumer design to sustain 60 Hz telemetry on edge hardware.
 
@@ -158,54 +250,55 @@ Apex uses a threaded producer–consumer design to sustain 60 Hz telemetry on 
 
 Apex runs in parallel with your existing telemetry stack. It does not intercept or modify the primary ATLAS feed.
 
+### Latency Budget
+| **Stage** | **Target Latency** | **Measurement Point** |
+|---|---|---|
+| Telemetry emission | 16.7ms (60 Hz) | MCL40 -> UDP socket |
+| ATLAS forwarding | <2ms | Bridge processing |
+| Apex classification | <10ms | Validator compute |
+| Splunk HEC Ingestion | <5ms | HTTP POST + ACK |
+| Dashboard refresh | <1s | Search head UI |
+| Total end-to-end | <1.5s | MCL40 -> Race Engineer screen |
+
+> RED severity events trigger immediate push notification to the race engineer's mobile device, bypassing the dashboard refresh cycle.
+
+### Hardware Requirements (Trackside Edge)
+| **Component** | **Specification** |
+|---|---|
+| Platform | Cisco IR1101 Rugged Router or equivalent IOx-capable device |
+| CPU | Minimum 4 cores, 2.0 GHz |
+| RAM | 8 GB minimum, 16 GB recommended |
+| Storage | 128 GB SSD |
+| Network | Dual Ethernet (telemetry ingress & Splunk HEC egress) |
+| Power | Redundant DC input (garage PDU + UPS backup) |
+
+### Network VLAN Segmentation (Trackside)
+| **VLAN** | **Purpose** | **Traffic** |
+|---|---|---|
+| VLAN 100 | Telemetry | MCL40 -> ATLAS Bridge (air-gapped, no internet) |
+| VLAN 200 | Validator | ATLAS -> Apex Service -> Splunk HEC |
+| VLAN 300 | Management | SSH access for service updates |
+
+Encryption:
+
+Splunk HEC traffic encrypted via TLS 1.3
+
+MTC tunnel established via IPsec VPN or SD-WAN
+
+Telemetry packets remain unencrypted on VLAN 100 (air-gapped)
+
 Architecture Diagram (Mermaid)
 
 ``` mermaid
-flowchart LR
-    subgraph Ingest ["1. Telemetry Ingest (Producer)"]
-        ATLAS["ATLAS / DAQ Forwarder"]
-        ATLAS -- "UDP 60Hz\n(Port 20777)" --> Socket["UDP Socket\n0.0.0.0:20777"]
-        Socket -- "Raw Bytes" --> OSBuf["OS Receive Buffer\n(1MB)"]
-    end
-
-    subgraph EdgeCompute ["2. Edge Compute (Consumer Worker)"]
-        OSBuf -- "put_nowait()" --> Queue[/"Thread-Safe Queue\n(maxsize=2048)"/]
-        Queue -- "get(timeout=1s)" --> Worker["Worker Thread"]
-        Worker --> Unpack["Unpack Struct\n<d10sffff>"]
-        Unpack --> Physics["Compute\nVertical Energy\nE = 0.5 × 798kg × vz²"]
-        Physics --> Classify["classify_event()\nengine_temp | energy_joules | ride_height"]
-    end
-
-    subgraph Severity ["3. Integrity Classification"]
-        Classify --> GREEN["GREEN\nWITHIN_SPEC\ncompliance_status: LEGAL"]
-        Classify --> YELLOW["YELLOW\nTRENDING\nVIOLATION_RISK or\nHIGH_COMPRESSION"]
-        Classify --> RED["RED\nANOMALY_DETECTED\nCRITICAL: TORQUE_ANOMALY_CONFIRMED"]
-    end
-
-    subgraph Output ["4. Enriched Output (All Events)"]
-        GREEN --> HEC["Splunk HEC\n(HTTPS Keep-Alive)\nindex=project_apex\nsourcetype=mcl_telemetry"]
-        YELLOW --> HEC
-        RED --> HEC
-        HEC --> Dashboard["Mission Control Dashboard\n• Event Stream (severity-colored)\n• Aero Platform Status\n• RED Alert Count\n• Speed Trace\n• Thermal Scatter"]
-    end
-
-    classDef source fill:#1e293b,stroke:#FF8000,stroke-width:2px,color:#fff;
-    classDef process fill:#0052cc,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef buffer fill:#FF8000,stroke:#fff,stroke-width:1px,color:#000;
-    classDef green fill:#53A051,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef yellow fill:#F8BE34,stroke:#fff,stroke-width:1px,color:#000;
-    classDef red fill:#DC4E41,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef splunk fill:#0052cc,stroke:#FF8000,stroke-width:2px,color:#fff;
-
-    class ATLAS,Socket source;
-    class Worker,Unpack,Physics,Classify process;
-    class OSBuf,Queue buffer;
-    class GREEN green;
-    class YELLOW yellow;
-    class RED red;
-    class HEC,Dashboard splunk;
+graph TD
+    A[MCL40 Car Telemetry 60Hz UDP] --> B[ATLAS Bridge\nCisco IOx]
+    B -->|UDP Localhost| C[Apex Validator Service\nPython 3.11]
+    C -->|HTTPS HEC| D[Splunk HEC\nIndex: project_apex]
+    D -->|Forwarder| E[Splunk Search Head\nMTC Mission Control]
+    E --> F[Race Engineers\nDashboard]
+    E --> G[Safety Team\nDashboard]
 ```
-All GREEN, YELLOW, and RED events go to Splunk. The physics logic never silently drops “nominal” data; only queue overflow can drop packets, and Apex logs that condition.
+All GREEN, YELLOW, and RED events go to Splunk. The physics logic never silently drops nominal data; only queue overflow can drop packets, and Apex logs that condition.
 
 ### **🛡️ CISSP Security & Hardening**
 
