@@ -16,90 +16,134 @@ import socket
 import struct
 import time
 import math
-import random
 
-# CONFIGURATION
-UDP_IP = "127.0.0.1"
-UDP_PORT = 20777
-FREQUENCY = 60  # 60Hz Telemetry Standard
+UDP_IP    = "127.0.0.1"
+UDP_PORT  = 20777
+FREQUENCY = 60  # 60Hz
 
-print(f"[*] Project Apex: ATLAS Bridge Initialized on {UDP_IP}:{UDP_PORT}")
-print("[*] Mode: HEAD-TO-HEAD SIMULATION (Lando vs Oscar)")
-print("[*] Scenario: CAR_1 (Lando) -> Transient Torque Anomaly | CAR_81 (Oscar) -> Baseline")
-print("[*] Pattern: Burst Logic (Simulating Corner Exits)")
+# PACKET FORMAT (v1.2) — must match production_validator_service_prod_2.py exactly.
+# Field order: timestamp(d), car_id(10s), speed_kph(f), ride_height_mm(f),
+#              vert_vel_ms(f), engine_temp_c(f), fuel_load_kg(f)
+PACKET_FORMAT = '<d10sfffff'  # 38 bytes
+
+# --- PER-CAR FUEL MODEL (Shanghai GP 2026) ---
+# Fuel is tracked SEPARATELY per car to produce two distinct visible traces
+# in the Splunk Fuel Over Time panel. Lando burns slightly more fuel due
+# to higher-energy deployment profile; Oscar uses a more conservative strategy.
+# Both values are physically plausible within the 2026 fuel allocation.
+#
+# Race: ~307 km, ~56 laps, ~90 min, max 100 kg fuel
+# Lando (aggressive): 100 kg / ~87.7 min → 0.019 kg/s base burn
+# Oscar (conservative): 100 kg / ~98.0 min → 0.017 kg/s base burn
+# During Lando torque anomaly: +0.004 kg/s (higher electrical deployment)
+
+FUEL_START_KG         = 100.0
+LANDO_BURN_BASE_KGS   = 0.019    # kg/s base — 87.7 min race
+OSCAR_BURN_KGS        = 0.017    # kg/s constant — 98 min race
+ANOMALY_BURN_EXTRA    = 0.004    # kg/s added during Lando torque anomaly
+
+# FAST DEMO: uncomment these to burn through fuel in ~3-5 minutes
+# LANDO_BURN_BASE_KGS = 0.35
+# OSCAR_BURN_KGS      = 0.30
+# ANOMALY_BURN_EXTRA  = 0.05
+
+print(f"[*] Project Apex: ATLAS Bridge v1.2 on {UDP_IP}:{UDP_PORT}")
+print("[*] Mode: HEAD-TO-HEAD SIMULATION (CAR1: Norris | CAR81: Piastri)")
+print(f"[*] Fuel model: per-car | CAR1={LANDO_BURN_BASE_KGS}kg/s | CAR81={OSCAR_BURN_KGS}kg/s")
+print(f"[*] Packet format: {PACKET_FORMAT} (38 bytes) — includes fuel_load_kg")
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 start_time = time.time()
 
-# Adjusted baseline temperatures to quickly reach the 130C FIA threshold
-lando_temp = 115.0
-oscar_temp = 115.0
+lando_temp        = 125.0
+oscar_temp        = 110.0
+lando_fuel_burned = 0.0   # cumulative kg burned by Lando
+oscar_fuel_burned = 0.0   # cumulative kg burned by Oscar
+
+last_time = start_time
 
 try:
     while True:
         current_time = time.time()
-        elapsed = current_time - start_time
-        
-        # --- CAR 1: LANDO (THE ANOMALY) ---
-        # 1. Simulate Thermal Creep (Engine getting hotter over the "lap")
-        if lando_temp < 140.0:
-            lando_temp += 0.08  
-        
-        # 2. Simulate "High Load" Events (Corner Exits)
-        # Using a sine wave to simulate On-Throttle (Positive) vs Off-Throttle (Negative)
-        # Period is approx 4 seconds
-        throttle_demand = math.sin(elapsed * 1.5)
-        is_accelerating = throttle_demand > 0.4  # Only trigger under hard acceleration
-        
-        # LOGIC GATE: 
-        # The Anomaly requires TWO conditions:
-        # A. Engine is Expanded (Temp > 130)
-        # B. Driver is demanding Torque (Accelerating)
-        torque_anomaly_active = (lando_temp > 130.0) and is_accelerating
-        
-        lando_speed = 320.0 + (math.sin(elapsed) * 10)
-        
-        # Standard Ride Height is 30mm (+/- suspension travel)
-        lando_rh = 30.0 + (5 * math.sin(elapsed * 2))
-        
-        if torque_anomaly_active:
-            # PHYSICS SIMULATION: 
-            # Torque Spike causes sudden squat (-2.5mm)
-            lando_rh -= 2.5 
-            # High Torque + Stalled Floor = Vertical Oscillation (Porpoising)
-            # This makes the "Energy" value spike in your dashboard
-            lando_vz = (math.sin(elapsed * 20) * 1.8) 
+        elapsed      = current_time - start_time
+        dt           = current_time - last_time   # seconds since last tick
+        last_time    = current_time
+
+        # --- CAR 1: LANDO NORRIS (ANOMALY CAR) ---
+        if lando_temp < 136.0:
+            lando_temp += 0.05
+
+        lando_speed      = 260.0 + (math.sin(elapsed * 0.8) * 60)
+        is_accelerating  = math.cos(elapsed * 0.8) > 0.2
+        torque_anomaly   = (lando_temp > 130.0) and is_accelerating
+
+        lando_rh_mm = 32.0 + (1.5 * math.sin(elapsed * 4))
+        lando_vz_ms = 0.15 * math.sin(elapsed * 15)
+
+        if torque_anomaly:
+            lando_rh_mm -= 5.5
+            lando_vz_ms  = 0.6 + (0.1 * math.sin(elapsed * 25))
+
+        # Per-car fuel burn — higher during Lando anomaly
+        lando_burn_rate   = LANDO_BURN_BASE_KGS + (ANOMALY_BURN_EXTRA if torque_anomaly else 0.0)
+        lando_fuel_burned = min(FUEL_START_KG, lando_fuel_burned + lando_burn_rate * dt)
+        lando_fuel_kg     = max(0.0, FUEL_START_KG - lando_fuel_burned)
+
+        # --- CAR 81: OSCAR PIASTRI (CONTROL CAR) ---
+        if oscar_temp < 118.0:
+            oscar_temp += 0.01
+
+        oscar_speed  = 250.0 + (math.cos(elapsed * 0.5) * 75)
+        oscar_rh_mm  = 31.5 + (1.8 * math.cos(elapsed * 3.5))
+        oscar_vz_ms  = 0.12 * math.cos(elapsed * 12)
+
+        oscar_fuel_burned = min(FUEL_START_KG, oscar_fuel_burned + OSCAR_BURN_KGS * dt)
+        oscar_fuel_kg     = max(0.0, FUEL_START_KG - oscar_fuel_burned)
+
+        # --- PACKET GENERATION ---
+        # FIELD ORDER must exactly match PACKET_FORMAT and validator unpacking:
+        #   [2] speed_kph       (f) kph
+        #   [3] ride_height_mm  (f) mm      ← NOT m/s
+        #   [4] vert_vel_ms     (f) m/s     ← drives E = 0.5 * dynamic_mass * vz²
+        #   [5] engine_temp_c   (f) °C
+        #   [6] fuel_load_kg    (f) kg      ← per-car, decreases during race
+
+        lando_car_id = b'CAR1\x00\x00\x00\x00\x00\x00'   # 10 bytes
+        oscar_car_id = b'CAR81\x00\x00\x00\x00\x00'        # 10 bytes
+
+        lando_packet = struct.pack(
+            PACKET_FORMAT,
+            current_time, lando_car_id,
+            lando_speed, lando_rh_mm, lando_vz_ms, lando_temp, lando_fuel_kg
+        )
+        oscar_packet = struct.pack(
+            PACKET_FORMAT,
+            current_time, oscar_car_id,
+            oscar_speed, oscar_rh_mm, oscar_vz_ms, oscar_temp, oscar_fuel_kg
+        )
+
+        sock.sendto(lando_packet, (UDP_IP, UDP_PORT))
+        sock.sendto(oscar_packet, (UDP_IP, UDP_PORT))
+
+        # --- CONSOLE DIAGNOSTICS (every 5 seconds) ---
+        lando_mass = 768.0 + lando_fuel_kg
+        lando_E    = 0.5 * lando_mass * lando_vz_ms**2
+        oscar_mass = 768.0 + oscar_fuel_kg
+
+        if torque_anomaly:
+            status = f"RED    | vz={lando_vz_ms:.3f}m/s E={lando_E:.1f}J rh={lando_rh_mm:.1f}mm"
+        elif lando_temp > 130.0:
+            status = f"YELLOW | vz={lando_vz_ms:.3f}m/s E={lando_E:.1f}J (elevated temp)"
         else:
-            # Nominal vertical velocity (road bumps)
-            lando_vz = 0.3 
+            status = f"GREEN  | vz={lando_vz_ms:.3f}m/s E={lando_E:.1f}J"
 
-        # --- CAR 81: OSCAR (THE CONTROL) ---
-        if oscar_temp < 98.0:
-            oscar_temp += 0.02
-            
-        oscar_speed = 322.0 + (math.sin(elapsed) * 10)
-        oscar_rh = 30.0 + (5 * math.sin(elapsed * 2)) 
-        oscar_vz = 0.25 
+        if int(elapsed) % 5 == 0 and elapsed % 1 < (1 / FREQUENCY):
+            print(f"[t={elapsed:>6.1f}s] "
+                  f"CAR1:  fuel={lando_fuel_kg:.2f}kg mass={lando_mass:.1f}kg | {status}")
+            print(f"         "
+                  f"CAR81: fuel={oscar_fuel_kg:.2f}kg mass={oscar_mass:.1f}kg | temp={oscar_temp:.1f}C")
 
-        # --- BULLETPROOF PACKET GENERATION (<d10sffff) ---
-        packet_lando = struct.pack('<d10sffff', current_time, b"CAR_1".ljust(10, b'\x00'), lando_speed, lando_rh, lando_vz, lando_temp)
-        sock.sendto(packet_lando, (UDP_IP, UDP_PORT))
-        
-        packet_oscar = struct.pack('<d10sffff', current_time, b"CAR_81".ljust(10, b'\x00'), oscar_speed, oscar_rh, oscar_vz, oscar_temp)
-        sock.sendto(packet_oscar, (UDP_IP, UDP_PORT))
-        
-        # ALIGNMENT CHANGE: Console output helps you narrate the "Burst" nature
-        if elapsed % 0.5 < 0.05: 
-            if torque_anomaly_active:
-                status = "!!! TORQUE SPIKE !!!" 
-            elif lando_temp > 130.0:
-                status = "High Temp (Coasting)"
-            else:
-                status = "Nominal"
-                
-            print(f"Time: {elapsed:.0f}s | Lando: {lando_temp:.1f}C [{status}]")
-        
-        time.sleep(1/FREQUENCY)
+        time.sleep(1 / FREQUENCY)
 
 except KeyboardInterrupt:
     print("\n[!] Bridge Stopped.")
