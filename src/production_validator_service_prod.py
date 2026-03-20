@@ -16,9 +16,9 @@
 """
 PROJECT APEX: ACTIVE AERO & INTEGRITY VALIDATION SERVICE (PRODUCTION)
 ---------------------------------------------------------------------
-Context:    F1 2026 Technical Regulations (MCL40)
+Context: F1 2026 Technical Regulations (MCL40)
 Deployment: Cisco IOx Edge Compute / MTC Mission Control
-Author:     Timothy D. Harmon, CISSP
+Author: Timothy D. Harmon, CISSP
 
 DESCRIPTION:
 This service acts as the 'Edge Brain' for the Project Apex framework.
@@ -27,14 +27,29 @@ and computes vertical energy, thermal mode, and basic integrity severity.
 
 It emits enriched events to Splunk with:
 
-  - compliance_status     (legacy physics classification)
-  - apex_severity         (GREEN / YELLOW / RED)
-  - apex_status           (WITHIN_SPEC / TRENDING / ANOMALY_DETECTED)
-  - apex_message          (short human-readable description)
-  - sensor_id             (logical sensor / channel identifier)
+- compliance_status (legacy physics classification)
+- apex_severity (GREEN / YELLOW / RED)
+- apex_status (WITHIN_SPEC / TRENDING / ANOMALY_DETECTED)
+- apex_message (short human-readable description)
+- sensor_id (logical sensor / channel identifier)
 
 The detailed natural-language YELLOW/RED text lives in Splunk as
 'apex_message' or can be expanded later as needed.
+
+CHANGE LOG:
+v1.0 (March 2026)  - Initial production release
+v1.1 (March 2026)  - CORRECTED: CAR_MASS_KG updated from 798.0 to 768.0 kg
+                     per 2026 FIA F1 Technical Regulations minimum weight.
+                     All prior vertical energy calculations were overestimated
+                     by ~3.9%. Threshold boundary events may have been
+                     misclassified in v1.0.
+v1.1.1 (March 2026)- BUGFIX: classify_event HIGH_COMPRESSION/nominal-energy
+                     branch now correctly sets compliance_status to
+                     'WARNING: ELEVATED_TEMP' instead of leaving it as
+                     'LEGAL'. Previously, YELLOW apex_severity events in
+                     this branch were rendering as GREEN rows in the Splunk
+                     Event Stream dashboard because compliance_status was
+                     never updated from its default value.
 """
 
 import socket
@@ -57,41 +72,47 @@ logger = logging.getLogger("ApexValidator")
 # --- SUPPRESS SSL WARNINGS ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- PRODUCTION CONFIGURATION (ENV VARS) ---
+# --- HARDCODED DEMO CONFIGURATION ---
 SPLUNK_HEC_URL = os.getenv("SPLUNK_HEC_URL", "https://splunk-hec.mclaren.internal:8088/services/collector/event")
 SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN", "REPLACE_WITH_SECURE_TOKEN")
 LISTEN_IP = os.getenv("LISTEN_IP", "0.0.0.0")
 LISTEN_PORT = int(os.getenv("LISTEN_PORT", "20777"))
 
-# --- PHYSICS CONSTANTS (MCL40) ---
-CAR_MASS_KG = 798.0
+# --- PHYSICS CONSTANTS (MCL40 — 2026 FIA F1 Technical Regulations) ---
+# CORRECTION v1.1: Updated from 798.0 to 768.0 kg per 2026 minimum weight regulation.
+CAR_MASS_KG = 768.0
 THERMAL_THRESHOLD_C = 130.0
-ENERGY_LIMIT_J = 100.0           # Standard oscillation limit
-THERMAL_ENERGY_LIMIT_J = 80.0    # Reduced threshold when floor is thermally loaded
-AERO_STALL_RH_MM = 28.0          # Ride height where diffuser stall becomes imminent
+ENERGY_LIMIT_J = 100.0          # Standard oscillation limit
+THERMAL_ENERGY_LIMIT_J = 80.0   # Reduced threshold when floor is thermally loaded
+AERO_STALL_RH_MM = 28.0         # Ride height where diffuser stall becomes imminent
 
-# Packet format: [timestamp(d)][car_id(10s)][speed_kph(f)][ride_height_mm(f)][vert_vel_ms(f)][engine_temp_c(f)]
 PACKET_FORMAT = '<d10sffff'
 PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
 
-# --- THREADING CONFIGURATION ---
 PACKET_QUEUE = queue.Queue(maxsize=2048)
-QUEUE_FULL_WARNING_COOLDOWN = 0.0
+http_session = requests.Session()
 
-# GLOBAL STATE FOR LOG THROTTLING
 last_success_log_time = 0.0
 last_error_log_time = 0.0
+QUEUE_FULL_WARNING_COOLDOWN = 0.0
 
-# --- HTTP SESSION ---
-http_session = requests.Session()
 
 def calculate_vertical_energy(vz: float) -> float:
     return 0.5 * CAR_MASS_KG * (vz ** 2)
 
+
 def classify_event(engine_temp: float, energy_joules: float, ride_height: float):
     """
+    Classifies a telemetry packet into a severity state.
+
     Returns:
-        compliance_status, apex_severity, apex_status, apex_message
+        compliance_status, apex_severity, apex_status, apex_message, thermal_mode
+
+    IMPORTANT: compliance_status MUST be explicitly set in every branch.
+    It is used as the primary field for Event Stream row background coloring
+    in Splunk Dashboard Studio via matchValue(). Leaving it as the default
+    'LEGAL' in any non-GREEN branch will cause YELLOW/RED events to render
+    as green rows in the dashboard.
     """
     compliance_status = "LEGAL"
     apex_severity = "GREEN"
@@ -116,7 +137,9 @@ def classify_event(engine_temp: float, energy_joules: float, ride_height: float)
             apex_status = "TRENDING"
             apex_message = "High engine temp and elevated vertical energy; monitor for torque anomaly."
         else:
-            # High temperature but energy still within threshold
+            # BUGFIX v1.1.1: was leaving compliance_status as "LEGAL" causing
+            # YELLOW apex_severity events to render as GREEN in the dashboard.
+            compliance_status = "WARNING: ELEVATED_TEMP"
             apex_severity = "YELLOW"
             apex_status = "TRENDING"
             apex_message = "Engine temperature above nominal; monitor vertical energy and ride height."
@@ -128,6 +151,7 @@ def classify_event(engine_temp: float, energy_joules: float, ride_height: float)
             apex_message = "Vertical energy above nominal limit; monitor for oscillation risk."
 
     return compliance_status, apex_severity, apex_status, apex_message, thermal_mode
+
 
 def send_to_splunk(payload: dict, car_id: str):
     global last_success_log_time, last_error_log_time
@@ -159,6 +183,7 @@ def send_to_splunk(payload: dict, car_id: str):
             logger.warning(f"HEC Connection Failed: {e}")
             last_error_log_time = current_time
 
+
 def processing_worker():
     """Reads packets from Queue, parses physics, sends to Splunk."""
     while True:
@@ -187,7 +212,6 @@ def processing_worker():
                 engine_temp, energy_joules, ride_height
             )
 
-            # For this prototype, we treat vertical platform as the primary sensor_id
             sensor_id = "VERT_PLATFORM"
 
             telemetry_event = {
@@ -218,6 +242,7 @@ def processing_worker():
             logger.error(f"Worker Exception: {e}")
             PACKET_QUEUE.task_done()
 
+
 def main():
     global QUEUE_FULL_WARNING_COOLDOWN
 
@@ -233,6 +258,7 @@ def main():
     logger.info(f"Project Apex Validator Active on {LISTEN_IP}:{LISTEN_PORT}")
     logger.info("Architecture: Multi-Threaded Producer/Consumer (Queue: 2048)")
     logger.info("Logic Profile: MCL40_TRANSIENT_TORQUE_V2_WITH_SEVERITY")
+    logger.info(f"Physics: CAR_MASS_KG={CAR_MASS_KG} kg (2026 FIA minimum weight)")
 
     worker = threading.Thread(target=processing_worker, daemon=True)
     worker.start()
@@ -240,7 +266,6 @@ def main():
     while True:
         try:
             data, _ = sock.recvfrom(1024)
-
             try:
                 PACKET_QUEUE.put_nowait(data)
             except queue.Full:
@@ -256,6 +281,7 @@ def main():
         except Exception as e:
             logger.error(f"Main loop exception: {e}")
             continue
+
 
 if __name__ == "__main__":
     main()
