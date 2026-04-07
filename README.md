@@ -21,6 +21,26 @@ Project Apex does not replace existing telemetry infrastructure. It adds an inte
 
 ---
 
+## 🎤 Conference Presentations
+
+### BSides San Diego 2026 — Public Debut
+**April 4, 2026 | San Diego State University, San Diego, CA**
+
+> *"Hacking Physics at 300 KPH: Securing the Cyber-Physical Edge in F1"*
+
+Project Apex was publicly presented to the professional cybersecurity community at **BSides San Diego 2026** — a peer-reviewed practitioner conference attended by security engineers, architects, CISOs, and technical leadership from across the industry.
+
+The talk demonstrated Project Apex's real-time physics validation architecture applied to Formula 1 telemetry: how 300+ concurrent sensor streams at 60 Hz create an unvalidated data plane that carries safety-critical decisions at race speed — and how Apex closes that gap with a deterministic, human-in-the-loop integrity layer.
+
+| | |
+|---|---|
+| **Audience** | Security engineers, architects, CISOs, and technical leadership |
+| **Core demonstration** | Live YELLOW → RED alert escalation, Splunk Mission Control, physics envelope validation |
+| **Slide deck** | [View Slides (PDF)]([./Project-Apex-Security-BSides-San-Diego-2026.pdf](https://github.com/SecurityCyberGeek/project-apex-telemetry/blob/main/Project-Apex-Security-BSides-San-Diego-2026.pdf)) |
+| **Full portfolio** | [securitycybergeek.com](https://securitycybergeek.com) |
+
+---
+
 ## 🧠 Physics Model (v1.1)
 
 Apex v1.1 uses a deliberately grounded physics model derived from the 2026 FIA Technical
