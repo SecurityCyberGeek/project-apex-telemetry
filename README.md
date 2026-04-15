@@ -311,12 +311,23 @@ Architecture Diagram (Mermaid)
 
 ``` mermaid
 graph TD
-    A[MCL40 Car Telemetry 60Hz UDP] --> B[ATLAS Bridge\nCisco IOx]
-    B -->|UDP Localhost| C[Apex Validator Service\nPython 3.11]
-    C -->|HTTPS HEC| D[Splunk HEC\nIndex: project_apex]
-    D -->|Forwarder| E[Splunk Search Head\nMTC Mission Control]
-    E --> F[Race Engineers\nDashboard]
-    E --> G[Safety Team\nDashboard]
+    A["1. Ingest Producer\nATLAS Forwarder\nUDP Multicast — Port 20777"] --> B[UDP Socket\n0.0.0.0:20777]
+    B --> C["OS Receive Buffer\n1 MB SO_RCVBUF"]
+    C -->|Raw Bytes| D["2. Edge Compute\nMain Thread — Validator\nProducer"]
+    D -->|Enqueue| E["Thread-Safe Queue\nmaxsize=2048"]
+    E -->|Dequeue| F["Worker Thread\nConsumer"]
+    F --> G["Decode Binary Struct\n<d10sffff>"]
+    G --> H["Compute Vertical Energy\nE = 0.5 × 798.0 kg × vz²"]
+    TD["TD Config Layer\nPoll Splunk Lookup — 60s"] -->|"Active Thresholds"| I
+    H --> I{"Logic Gate"}
+    I -->|"GREEN\nEnergy < 100J\nTemp < 130°C"| J["3. Transport — GREEN\nHTTPS Session Keep-Alive\napex_severity: GREEN"]
+    I -->|"YELLOW\nEnergy >= 100J\nOR Temp >= 130°C"| K["3. Transport — YELLOW\nHTTPS Session Keep-Alive\napex_severity: YELLOW"]
+    I -->|"RED\nEnergy >= 100J\nAND Temp >= 130°C\nAND RH <= 28mm"| L["3. Transport — RED\nHTTPS Session Keep-Alive\napex_severity: RED"]
+    J --> M["4. Visualization\nSplunk Heavy Forwarder\nIndex: project_apex"]
+    K --> M
+    L --> M
+    M --> N["Mission Control Dashboard\nMTC Race Engineer"]
+    N -->|"RED Trigger Only"| O["Ghost Panel Active\nTransient Torque Anomaly\n+ Push Notification — Race Engineer"]
 ```
 All GREEN, YELLOW, and RED events go to Splunk. The physics logic never silently drops nominal data; only queue overflow can drop packets, and Apex logs that condition.
 
