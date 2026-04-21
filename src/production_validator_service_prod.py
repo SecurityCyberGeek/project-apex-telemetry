@@ -14,6 +14,7 @@
 
 #!/usr/bin/env python3
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 PROJECT APEX: ACTIVE AERO & INTEGRITY VALIDATION SERVICE (PRODUCTION)
 ---------------------------------------------------------------------
@@ -26,66 +27,66 @@ This service acts as the 'Edge Brain' for the Project Apex framework.
 It consumes high-frequency (60Hz) UDP telemetry from the ATLAS forwarder
 and computes vertical energy, thermal mode, and basic integrity severity.
 
-It emits enriched events to Splunk with:
+DYNAMIC MASS MODEL:
+Vertical energy is computed using real-time car mass:
+    E = 0.5 * (CAR_MIN_MASS_KG + fuel_load_kg) * vz²
 
-- compliance_status (legacy physics classification)
-- apex_severity (GREEN / YELLOW / RED)
-- apex_status (WITHIN_SPEC / TRENDING / ANOMALY_DETECTED)
-- apex_message (short human-readable description)
-- sensor_id (logical sensor / channel identifier)
+This reflects 2026 F1 physics accurately:
+    - Minimum car mass:  768.0 kg (2026 FIA Technical Regulations)
+    - Full fuel load:   +100.0 kg at race start
+    - Race start mass:   868.0 kg → E_anomaly = 212.7 J
+    - Race end mass:     768.0 kg → E_anomaly = 188.2 J
 
-The detailed natural-language YELLOW/RED text lives in Splunk as
-'apex_message' or can be expanded later as needed.
+Heavier cars at race start produce higher vertical energy at the same
+vertical velocity, correctly triggering RED/YELLOW thresholds sooner
+when tyre grip is lower and the car is most vulnerable.
 
 CHANGE LOG:
-v1.0 (March 2026)  - Initial production release
-v1.1 (March 2026)  - CORRECTED: CAR_MASS_KG updated from 798.0 to 768.0 kg
-                     per 2026 FIA F1 Technical Regulations minimum weight.
-                     All prior vertical energy calculations were overestimated
-                     by ~3.9%. Threshold boundary events may have been
-                     misclassified in v1.0.
-v1.1.1 (March 2026)- BUGFIX: classify_event HIGH_COMPRESSION/nominal-energy
-                     branch now correctly sets compliance_status to
-                     'WARNING: ELEVATED_TEMP' instead of leaving it as
-                     'LEGAL'. Previously, YELLOW apex_severity events in
-                     this branch were rendering as GREEN rows in the Splunk
-                     Event Stream dashboard because compliance_status was
-                     never updated from its default value.
+v1.0   (March 2026)  - Initial production release
+v1.1   (March 2026)  - CORRECTED: CAR_MASS_KG 798.0 → 768.0 kg
+v1.1.1 (March 2026)  - BUGFIX: HIGH_COMPRESSION/nominal-energy branch now
+                       correctly sets compliance_status = 'WARNING: ELEVATED_TEMP'
+v1.2   (March 2026)  - FEATURE: Dynamic mass model. PACKET_FORMAT updated
+                       from '<d10sffff' (34 bytes) to '<d10sfffff' (38 bytes)
+                       to include fuel_load_kg as field [6]. Vertical energy
+                       now reflects actual car mass at each moment in the race.
+                       Emits dynamic_mass_kg and fuel_load_kg to Splunk.
 """
 
 import socket
 import struct
-import json
 import time
 import os
-import sys
 import requests
 import logging
 import urllib3
 import threading
 import queue
-from datetime import datetime
 
-# --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger("ApexValidator")
 
-# --- SUPPRESS SSL WARNINGS ---
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- HARDCODED DEMO CONFIGURATION ---
-SPLUNK_HEC_URL = os.getenv("SPLUNK_HEC_URL", "https://splunk-hec.mclaren.internal:8088/services/collector/event")
-SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN", "REPLACE_WITH_SECURE_TOKEN")
-LISTEN_IP = os.getenv("LISTEN_IP", "0.0.0.0")
-LISTEN_PORT = int(os.getenv("LISTEN_PORT", "20777"))
+# --- CONFIGURATION ---
+SPLUNK_HEC_URL = "http://127.0.0.1:8088/services/collector/event"
+SPLUNK_TOKEN   = "60f19791-a02e-4ea4-bb17-365afab0885b"
+LISTEN_IP      = "127.0.0.1"
+LISTEN_PORT    = 20777
 
-# --- PHYSICS CONSTANTS (MCL40 — 2026 FIA F1 Technical Regulations) ---
-# CORRECTION v1.1: Updated from 798.0 to 768.0 kg per 2026 minimum weight regulation.
-CAR_MASS_KG = 768.0
-THERMAL_THRESHOLD_C = 130.0
-ENERGY_LIMIT_J = 100.0          # Standard oscillation limit
-THERMAL_ENERGY_LIMIT_J = 80.0   # Reduced threshold when floor is thermally loaded
-AERO_STALL_RH_MM = 28.0         # Ride height where diffuser stall becomes imminent
+# --- PACKET FORMAT (v1.2) ---
+# Field order: timestamp(d), car_id(10s), speed_kph(f), ride_height_mm(f),
+#              vert_vel_ms(f), engine_temp_c(f), fuel_load_kg(f)
+PACKET_FORMAT = '<d10sfffff'
+PACKET_SIZE   = struct.calcsize(PACKET_FORMAT)  # 38 bytes
+
+# --- PHYSICS CONSTANTS (2026 FIA F1 Technical Regulations) ---
+CAR_MIN_MASS_KG        = 768.0   # Minimum car + driver mass, no fuel (2026 regs)
+MAX_FUEL_LOAD_KG       = 100.0   # Maximum permitted fuel load at race start
+THERMAL_THRESHOLD_C    = 130.0   # High-compression regime threshold
+ENERGY_LIMIT_J         = 100.0   # Nominal vertical oscillation limit
+THERMAL_ENERGY_LIMIT_J = 80.0    # Reduced limit under high thermal load
+AERO_STALL_RH_MM       = 28.0    # Rear ride height stall-risk threshold
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FIA 2026 REGULATORY REFINEMENTS
@@ -100,69 +101,70 @@ ERS_BOOST_CAP_KW: float = 150.0         # Max Boost increment in race conditions
 ERS_MAX_RECHARGE_MJ: float = 7.0        # Max permitted energy recharge per lap (MJ)
 ERS_SUPERCLIP_MAX_DURATION_S: float = 4.0  # Target max superclip duration per lap (s)
 
-PACKET_FORMAT = '<d10sffff'
-PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
-
 PACKET_QUEUE = queue.Queue(maxsize=2048)
 http_session = requests.Session()
 
-last_success_log_time = 0.0
-last_error_log_time = 0.0
+last_success_log_time    = 0.0
+last_error_log_time      = 0.0
 QUEUE_FULL_WARNING_COOLDOWN = 0.0
 
 
-def calculate_vertical_energy(vz: float) -> float:
-    return 0.5 * CAR_MASS_KG * (vz ** 2)
+def calculate_vertical_energy(vz: float, fuel_load_kg: float) -> float:
+    """
+    Computes vertical energy using dynamic car mass.
+
+    E = 0.5 * (CAR_MIN_MASS_KG + fuel_load_kg) * vz²
+
+    Dynamic mass reflects actual race conditions:
+      - Race start (100 kg fuel): mass = 868.0 kg → higher energy, earlier threshold
+      - Race end   (  0 kg fuel): mass = 768.0 kg → lower energy, later threshold
+    """
+    fuel_clamped   = max(0.0, min(fuel_load_kg, MAX_FUEL_LOAD_KG))
+    dynamic_mass   = CAR_MIN_MASS_KG + fuel_clamped
+    return 0.5 * dynamic_mass * (vz ** 2)
 
 
 def classify_event(engine_temp: float, energy_joules: float, ride_height: float):
     """
     Classifies a telemetry packet into a severity state.
 
-    Returns:
-        compliance_status, apex_severity, apex_status, apex_message, thermal_mode
-
-    IMPORTANT: compliance_status MUST be explicitly set in every branch.
-    It is used as the primary field for Event Stream row background coloring
-    in Splunk Dashboard Studio via matchValue(). Leaving it as the default
-    'LEGAL' in any non-GREEN branch will cause YELLOW/RED events to render
-    as green rows in the dashboard.
+    compliance_status MUST be explicitly set in every non-GREEN branch.
+    It drives Event Stream row background coloring in Splunk Dashboard Studio
+    via matchValue(). Leaving it as 'LEGAL' in any YELLOW branch causes
+    those events to render as green rows.
     """
     compliance_status = "LEGAL"
-    apex_severity = "GREEN"
-    apex_status = "WITHIN_SPEC"
-    apex_message = "Within expected physics envelope."
-
-    thermal_mode = "STANDARD"
-    squat_detected = False
+    apex_severity     = "GREEN"
+    apex_status       = "WITHIN_SPEC"
+    apex_message      = "Within expected physics envelope."
+    thermal_mode      = "STANDARD"
+    squat_detected    = False
 
     if engine_temp > THERMAL_THRESHOLD_C:
-        thermal_mode = "HIGH_COMPRESSION"
+        thermal_mode   = "HIGH_COMPRESSION"
         squat_detected = ride_height < AERO_STALL_RH_MM
 
         if energy_joules > THERMAL_ENERGY_LIMIT_J and squat_detected:
             compliance_status = "CRITICAL: TORQUE_ANOMALY_CONFIRMED"
-            apex_severity = "RED"
-            apex_status = "ANOMALY_DETECTED"
-            apex_message = "High engine temp, high vertical energy, and aero squat detected (torque anomaly)."
+            apex_severity     = "RED"
+            apex_status       = "ANOMALY_DETECTED"
+            apex_message      = "High engine temp, high vertical energy, and aero squat detected (torque anomaly)."
         elif energy_joules > THERMAL_ENERGY_LIMIT_J:
             compliance_status = "WARNING: TORQUE_ANOMALY_UNCONFIRMED"
-            apex_severity = "YELLOW"
-            apex_status = "TRENDING"
-            apex_message = "High engine temp and elevated vertical energy; monitor for torque anomaly."
+            apex_severity     = "YELLOW"
+            apex_status       = "TRENDING"
+            apex_message      = "High engine temp and elevated vertical energy; monitor for torque anomaly."
         else:
-            # BUGFIX v1.1.1: was leaving compliance_status as "LEGAL" causing
-            # YELLOW apex_severity events to render as GREEN in the dashboard.
             compliance_status = "WARNING: ELEVATED_TEMP"
-            apex_severity = "YELLOW"
-            apex_status = "TRENDING"
-            apex_message = "Engine temperature above nominal; monitor vertical energy and ride height."
+            apex_severity     = "YELLOW"
+            apex_status       = "TRENDING"
+            apex_message      = "Engine temperature above nominal; monitor vertical energy and ride height."
     else:
         if energy_joules > ENERGY_LIMIT_J:
             compliance_status = "VIOLATION_RISK"
-            apex_severity = "YELLOW"
-            apex_status = "TRENDING"
-            apex_message = "Vertical energy above nominal limit; monitor for oscillation risk."
+            apex_severity     = "YELLOW"
+            apex_status       = "TRENDING"
+            apex_message      = "Vertical energy above nominal limit; monitor for oscillation risk."
 
     return compliance_status, apex_severity, apex_status, apex_message, thermal_mode
 
@@ -179,7 +181,6 @@ def send_to_splunk(payload: dict, car_id: str):
 
     try:
         response = http_session.post(SPLUNK_HEC_URL, json=payload, verify=False, timeout=0.5)
-
         if response.status_code == 200:
             current_time = time.time()
             if current_time - last_success_log_time >= 60.0:
@@ -190,7 +191,6 @@ def send_to_splunk(payload: dict, car_id: str):
             if current_time - last_error_log_time >= 5.0:
                 logger.error(f"Splunk HEC Rejection: {response.text}")
                 last_error_log_time = current_time
-
     except Exception as e:
         current_time = time.time()
         if current_time - last_error_log_time >= 5.0:
@@ -199,7 +199,7 @@ def send_to_splunk(payload: dict, car_id: str):
 
 
 def processing_worker():
-    """Reads packets from Queue, parses physics, sends to Splunk."""
+    """Reads packets from Queue, parses physics with dynamic mass, sends to Splunk."""
     while True:
         try:
             data = PACKET_QUEUE.get(timeout=1.0)
@@ -211,41 +211,45 @@ def processing_worker():
                 PACKET_QUEUE.task_done()
                 continue
 
-            unpacked = struct.unpack(PACKET_FORMAT, data)
-            timestamp = unpacked[0]
-            raw_car_id = unpacked[1].decode('utf-8', errors='ignore')
-            car_id = raw_car_id.strip('\x00')
-            speed = unpacked[2]
-            ride_height = unpacked[3]
-            vert_vel = unpacked[4]
-            engine_temp = unpacked[5]
+            unpacked      = struct.unpack(PACKET_FORMAT, data)
+            timestamp     = unpacked[0]
+            car_id        = unpacked[1].decode('utf-8', errors='ignore').strip('\x00')
+            speed         = unpacked[2]
+            ride_height   = unpacked[3]
+            vert_vel      = unpacked[4]
+            engine_temp   = unpacked[5]
+            fuel_load_kg  = unpacked[6]   # NEW: from bridge fuel model
 
-            energy_joules = calculate_vertical_energy(vert_vel)
+            # Dynamic mass: decreases as fuel burns during the race
+            fuel_clamped  = max(0.0, min(fuel_load_kg, MAX_FUEL_LOAD_KG))
+            dynamic_mass  = CAR_MIN_MASS_KG + fuel_clamped
+
+            energy_joules = calculate_vertical_energy(vert_vel, fuel_load_kg)
 
             compliance_status, apex_severity, apex_status, apex_message, thermal_mode = classify_event(
                 engine_temp, energy_joules, ride_height
             )
 
-            sensor_id = "VERT_PLATFORM"
-
             telemetry_event = {
-                "time": timestamp,
-                "host": socket.gethostname(),
-                "source": "atlas_edge_bridge",
+                "time":       timestamp,
+                "host":       __import__('socket').gethostname(),
+                "source":     "atlas_edge_bridge",
                 "sourcetype": "mcl_telemetry",
-                "index": "project_apex",
+                "index":      "project_apex",
                 "event": {
-                    "car_id": car_id,
-                    "sensor_id": sensor_id,
-                    "speed_kph": int(round(speed)),
-                    "vertical_energy": round(energy_joules, 2),
-                    "engine_temp_c": round(engine_temp, 1),
-                    "rear_rh_mm": round(ride_height, 2),
+                    "car_id":           car_id,
+                    "sensor_id":        "VERT_PLATFORM",
+                    "speed_kph":        int(round(speed)),
+                    "vertical_energy":  round(energy_joules, 2),
+                    "engine_temp_c":    round(engine_temp, 1),
+                    "rear_rh_mm":       round(ride_height, 2),
+                    "fuel_load_kg":     round(fuel_clamped, 2),    # NEW
+                    "dynamic_mass_kg":  round(dynamic_mass, 1),    # NEW
                     "compliance_status": compliance_status,
-                    "thermal_mode": thermal_mode,
-                    "apex_severity": apex_severity,
-                    "apex_status": apex_status,
-                    "apex_message": apex_message
+                    "thermal_mode":     thermal_mode,
+                    "apex_severity":    apex_severity,
+                    "apex_status":      apex_status,
+                    "apex_message":     apex_message
                 }
             }
 
@@ -262,17 +266,17 @@ def main():
 
     http_session.headers.update({
         "Authorization": f"Splunk {SPLUNK_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type":  "application/json"
     })
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock = __import__('socket').socket(__import__('socket').AF_INET, __import__('socket').SOCK_DGRAM)
     sock.bind((LISTEN_IP, LISTEN_PORT))
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
+    sock.setsockopt(__import__('socket').SOL_SOCKET, __import__('socket').SO_RCVBUF, 1024 * 1024)
 
-    logger.info(f"Project Apex Validator Active on {LISTEN_IP}:{LISTEN_PORT}")
-    logger.info("Architecture: Multi-Threaded Producer/Consumer (Queue: 2048)")
-    logger.info("Logic Profile: MCL40_TRANSIENT_TORQUE_V2_WITH_SEVERITY")
-    logger.info(f"Physics: CAR_MASS_KG={CAR_MASS_KG} kg (2026 FIA minimum weight)")
+    logger.info(f"Project Apex Validator v1.2 Active on {LISTEN_IP}:{LISTEN_PORT}")
+    logger.info(f"Physics: DYNAMIC MASS | CAR_MIN={CAR_MIN_MASS_KG}kg + fuel_load_kg")
+    logger.info(f"Mass range: {CAR_MIN_MASS_KG}kg (empty) → {CAR_MIN_MASS_KG + MAX_FUEL_LOAD_KG}kg (full fuel)")
+    logger.info(f"Packet size: {PACKET_SIZE} bytes | Format: {PACKET_FORMAT}")
 
     worker = threading.Thread(target=processing_worker, daemon=True)
     worker.start()
@@ -282,12 +286,11 @@ def main():
             data, _ = sock.recvfrom(1024)
             try:
                 PACKET_QUEUE.put_nowait(data)
-            except queue.Full:
+            except __import__('queue').Full:
                 current_time = time.time()
                 if current_time - QUEUE_FULL_WARNING_COOLDOWN >= 5.0:
-                    logger.warning("QUEUE FULL: Dropping packets. Check Splunk connectivity.")
+                    logger.warning("QUEUE FULL: Dropping packets.")
                     QUEUE_FULL_WARNING_COOLDOWN = current_time
-
         except KeyboardInterrupt:
             logger.info("Stopping Validator Service...")
             http_session.close()
