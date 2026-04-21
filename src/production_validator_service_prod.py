@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 PROJECT APEX: ACTIVE AERO & INTEGRITY VALIDATION SERVICE (PRODUCTION)
 ---------------------------------------------------------------------
@@ -85,6 +86,19 @@ THERMAL_THRESHOLD_C = 130.0
 ENERGY_LIMIT_J = 100.0          # Standard oscillation limit
 THERMAL_ENERGY_LIMIT_J = 80.0   # Reduced threshold when floor is thermally loaded
 AERO_STALL_RH_MM = 28.0         # Ride height where diffuser stall becomes imminent
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIA 2026 REGULATORY REFINEMENTS
+# Source: FIA / FOM stakeholder agreement, April 20 2026
+# Effective: Miami Grand Prix onward (Round 4, 2026 season)
+# These constants are placeholders for v1.2 ERS-aware classification logic.
+# They do NOT alter any existing v1.1 GREEN/YELLOW/RED gates.
+# ─────────────────────────────────────────────────────────────────────────────
+ERS_PEAK_DEPLOY_KW: float = 350.0       # Max MGU-K power: quali + race accel zones (kW)
+ERS_NON_ACCEL_DEPLOY_KW: float = 250.0  # MGU-K limit outside acceleration zones (kW)
+ERS_BOOST_CAP_KW: float = 150.0         # Max Boost increment in race conditions (kW)
+ERS_MAX_RECHARGE_MJ: float = 7.0        # Max permitted energy recharge per lap (MJ)
+ERS_SUPERCLIP_MAX_DURATION_S: float = 4.0  # Target max superclip duration per lap (s)
 
 PACKET_FORMAT = '<d10sffff'
 PACKET_SIZE = struct.calcsize(PACKET_FORMAT)
