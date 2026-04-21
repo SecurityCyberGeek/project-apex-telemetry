@@ -38,7 +38,7 @@ Currently no automated tests. We will use pytest in this repo.
 
 ## Roadmap focus for Codex
 
-1. Add a pytest test suite for `production_validator_service_prod_2.py`.
+1. Add a pytest test suite for `production_validator_service_prod.py`.
 2. Add a GitHub Actions CI workflow to run tests on push/PR.
 3. Extend the validator to support an optional ERS state using the April 20, 2026 FIA regulatory values as named constants. ERS fields must be optional; v1.1 behavior must be preserved when they are absent.
 4. Refactor for clarity: type hints, docstrings, logging.
