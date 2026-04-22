@@ -69,10 +69,10 @@ logger = logging.getLogger("ApexValidator")
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURATION ---
-SPLUNK_HEC_URL = "http://127.0.0.1:8088/services/collector/event"
-SPLUNK_TOKEN   = "60f19791-a02e-4ea4-bb17-365afab0885b"
-LISTEN_IP      = "127.0.0.1"
-LISTEN_PORT    = 20777
+SPLUNK_HEC_URL = os.getenv("SPLUNK_HEC_URL", "https://splunk-hec.mclaren.internal:8088/services/collector/event")
+SPLUNK_TOKEN = os.getenv("SPLUNK_TOKEN", "REPLACE_WITH_SECURE_TOKEN")
+LISTEN_IP = os.getenv("LISTEN_IP", "0.0.0.0")
+LISTEN_PORT = int(os.getenv("LISTEN_PORT", "20777"))
 
 # --- PACKET FORMAT (v1.2) ---
 # Field order: timestamp(d), car_id(10s), speed_kph(f), ride_height_mm(f),
