@@ -1,375 +1,375 @@
 {
-    "title": "Project Apex: Mission Control (MCL40)",
-    "description": "Real-Time Physics Validation & Regulatory Compliance Engine \u2014 Post-Melbourne Update",
-    "inputs": {
-        "input_GlobalTime": {
-            "options": {
-                "defaultValue": "rt-30s,rt",
-                "token": "time_token"
-            },
-            "title": "Analysis Window",
-            "type": "input.timerange"
-        }
-    },
-    "defaults": {
-        "dataSources": {
-            "ds.search": {
-                "options": {
-                    "queryParameters": {
-                        "earliest": "$time_token.earliest$",
-                        "latest": "$time_token.latest$"
-                    }
-                }
-            }
-        }
-    },
-    "visualizations": {
-        "viz_PlatformStatus": {
-            "dataSources": {
-                "primary": "ds_PlatformStatus"
-            },
-            "options": {
-                "majorColor": "> majorValue | rangeValue(majorColorConfig)",
-                "majorColorConfig": [
-                    {
-                        "to": 80,
-                        "value": "#53A051"
-                    },
-                    {
-                        "from": 80,
-                        "to": 100,
-                        "value": "#F8BE34"
-                    },
-                    {
-                        "from": 100,
-                        "value": "#DC4E41"
-                    }
-                ],
-                "sparklineDisplay": "off",
-                "underLabel": "Joules \u2014 Current Peak (Dynamic Mass)"
-            },
-            "title": "Aero Platform Status",
-            "type": "splunk.singlevalue"
-        },
-        "viz_SeveritySummary": {
-            "context": {
-                "majorColorEditorConfig": [
-                    {
-                        "to": 1,
-                        "value": "#118832"
-                    },
-                    {
-                        "from": 1,
-                        "value": "#d41f1f"
-                    }
-                ]
-            },
-            "dataSources": {
-                "primary": "ds_SeveritySummary"
-            },
-            "options": {
-                "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
-                "majorColorMode": "list",
-                "underLabel": "Active RED alerts (last window)"
-            },
-            "title": "Integrity Severity (Active RED Alerts)",
-            "type": "splunk.singlevalue"
-        },
-        "viz_DynamicMass": {
-            "dataSources": {
-                "primary": "ds_DynamicMass"
-            },
-            "options": {
-                "majorColor": "> majorValue | rangeValue(massColorConfig)",
-                "massColorConfig": [
-                    {
-                        "to": 800,
-                        "value": "#53A051"
-                    },
-                    {
-                        "from": 800,
-                        "to": 840,
-                        "value": "#F8BE34"
-                    },
-                    {
-                        "from": 840,
-                        "value": "#DC4E41"
-                    }
-                ],
-                "sparklineDisplay": "off",
-                "underLabel": "kg (768 min + fuel load)"
-            },
-            "title": "Car Mass \u2014 CAR1 (Dynamic)",
-            "type": "splunk.singlevalue"
-        },
-        "viz_SpeedTrace": {
-            "dataSources": {
-                "primary": "ds_SpeedTrace"
-            },
-            "options": {
-                "seriesColors": [
-                    "#FF8000",
-                    "#00A0FF"
-                ],
-                "xAxisTitleVisibility": "hide",
-                "yAxisTitleText": "Speed (KPH)"
-            },
-            "title": "Live Speed Telemetry (Head-to-Head)",
-            "type": "splunk.line"
-        },
-        "viz_FuelTrace": {
-            "dataSources": {
-                "primary": "ds_FuelTrace"
-            },
-            "options": {
-                "seriesColors": [
-                    "#FF8000",
-                    "#00A0FF"
-                ],
-                "xAxisTitleVisibility": "hide",
-                "yAxisTitleText": "Fuel Remaining (kg)"
-            },
-            "title": "Fuel Load Over Time (CAR1: Norris | CAR81: Piastri)",
-            "type": "splunk.line"
-        },
-        "viz_ThermalScatter": {
-            "dataSources": {
-                "primary": "ds_ThermalScatter"
-            },
-            "options": {
-                "seriesColors": [
-                    "#DC4E41"
-                ],
-                "xAxisTitleText": "Engine Temp (\u00b0C)",
-                "yAxisTitleText": "Platform Compression (mm)"
-            },
-            "showLastUpdated": false,
-            "showProgressBar": false,
-            "title": "Transient Torque & Squat Correlation",
-            "type": "splunk.scatter"
-        },
-        "viz_EventStream": {
-            "context": {
-                "compliance_status_colors": [
-                    {
-                        "match": "CRITICAL: TORQUE_ANOMALY_CONFIRMED",
-                        "value": "#DC4E41"
-                    },
-                    {
-                        "match": "WARNING: TORQUE_ANOMALY_UNCONFIRMED",
-                        "value": "#FF8000"
-                    },
-                    {
-                        "match": "WARNING: ELEVATED_TEMP",
-                        "value": "#FF8000"
-                    },
-                    {
-                        "match": "VIOLATION_RISK",
-                        "value": "#F8BE34"
-                    },
-                    {
-                        "match": "LEGAL",
-                        "value": "#53A051"
-                    }
-                ]
-            },
-            "dataSources": {
-                "primary": "ds_EventStream"
-            },
-            "options": {
-                "count": 15,
-                "dataOverlayMode": "none",
-                "drilldown": "none",
-                "tableFormat": {
-                    "rowBackgroundColors": "> table | seriesByName(\"compliance_status\") | matchValue(compliance_status_colors)"
-                }
-            },
-            "title": "Event Stream \u2014 Compliance Log (CAR1: Norris | CAR81: Piastri)",
-            "type": "splunk.table"
-        }
-    },
-    "dataSources": {
-        "ds_PlatformStatus": {
-            "name": "Platform Status \u2014 Current Peak Energy",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| stats latest(vertical_energy) as current_energy by car_id\n| stats max(current_energy) as majorValue\n| fillnull value=0 majorValue",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_SeveritySummary": {
-            "name": "Severity Summary Search",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| stats count(eval(if(compliance_status=\"CRITICAL: TORQUE_ANOMALY_CONFIRMED\", 1, null()))) as majorValue\n| fillnull value=0 majorValue",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_DynamicMass": {
-            "name": "Dynamic Mass \u2014 CAR1",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\" car_id=\"CAR1\"\n| stats latest(dynamic_mass_kg) as majorValue\n| fillnull value=768 majorValue",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_SpeedTrace": {
-            "name": "Speed Trace Search",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| timechart span=1s limit=0 useother=false avg(speed_kph) by car_id",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_FuelTrace": {
-            "name": "Fuel Load \u2014 Per Car",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| timechart span=2s limit=0 useother=false avg(fuel_load_kg) by car_id",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_EventStream": {
-            "name": "Event Stream Search",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| table _time, car_id, speed_kph, vertical_energy, dynamic_mass_kg, fuel_load_kg, engine_temp_c, compliance_status\n| sort - _time",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_ThermalCheck": {
-            "name": "Thermal Threat Scanner",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| stats max(engine_temp_c) as peak_temp max(vertical_energy) as peak_energy\n| where peak_temp > 130 AND peak_energy > 80",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        },
-        "ds_ThermalScatter": {
-            "name": "Thermal Scatter Search",
-            "options": {
-                "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| table engine_temp_c, rear_rh_mm",
-                "queryParameters": {
-                    "earliest": "$time_token.earliest$",
-                    "latest": "$time_token.latest$"
-                }
-            },
-            "type": "ds.search"
-        }
-    },
-    "layout": {
-        "globalInputs": [
-            "input_GlobalTime"
-        ],
-        "layoutDefinitions": {
-            "layout_1": {
-                "options": {
-                    "height": 1260,
-                    "width": 1440
-                },
-                "structure": [
-                    {
-                        "item": "viz_PlatformStatus",
-                        "position": {
-                            "h": 300,
-                            "w": 360,
-                            "x": 0,
-                            "y": 0
-                        },
-                        "type": "block"
-                    },
-                    {
-                        "item": "viz_SeveritySummary",
-                        "position": {
-                            "h": 300,
-                            "w": 360,
-                            "x": 360,
-                            "y": 0
-                        },
-                        "type": "block"
-                    },
-                    {
-                        "item": "viz_DynamicMass",
-                        "position": {
-                            "h": 300,
-                            "w": 360,
-                            "x": 720,
-                            "y": 0
-                        },
-                        "type": "block"
-                    },
-                    {
-                        "item": "viz_SpeedTrace",
-                        "position": {
-                            "h": 300,
-                            "w": 360,
-                            "x": 1080,
-                            "y": 0
-                        },
-                        "type": "block"
-                    },
-                    {
-                        "item": "viz_FuelTrace",
-                        "position": {
-                            "h": 330,
-                            "w": 720,
-                            "x": 0,
-                            "y": 300
-                        },
-                        "type": "block"
-                    },
-                    {
-                        "item": "viz_ThermalScatter",
-                        "position": {
-                            "h": 330,
-                            "w": 720,
-                            "x": 720,
-                            "y": 300
-                        },
-                        "type": "block"
-                    },
-                    {
-                        "item": "viz_EventStream",
-                        "position": {
-                            "h": 630,
-                            "w": 1440,
-                            "x": 0,
-                            "y": 630
-                        },
-                        "type": "block"
-                    }
-                ],
-                "type": "grid"
-            }
-        },
-        "tabs": {
-            "items": [
-                {
-                    "label": "Mission Control",
-                    "layoutId": "layout_1"
-                }
-            ]
-        }
+  "title": "Project Apex: Mission Control (MCL40)",
+  "description": "Real-Time Physics Validation & Regulatory Compliance Engine \u2014 2026 Post-Melbourne Update",
+  "inputs": {
+    "input_GlobalTime": {
+      "options": {
+        "defaultValue": "rt-30s,rt",
+        "token": "time_token"
+      },
+      "title": "Analysis Window",
+      "type": "input.timerange"
     }
+  },
+  "defaults": {
+    "dataSources": {
+      "ds.search": {
+        "options": {
+          "queryParameters": {
+            "earliest": "$time_token.earliest$",
+            "latest": "$time_token.latest$"
+          }
+        }
+      }
+    }
+  },
+  "visualizations": {
+    "viz_PlatformStatus": {
+      "dataSources": {
+        "primary": "ds_PlatformStatus"
+      },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorConfig)",
+        "majorColorConfig": [
+          {
+            "to": 80,
+            "value": "#53A051"
+          },
+          {
+            "from": 80,
+            "to": 100,
+            "value": "#F8BE34"
+          },
+          {
+            "from": 100,
+            "value": "#DC4E41"
+          }
+        ],
+        "sparklineDisplay": "off",
+        "underLabel": "Joules \u2014 Current Peak (Dynamic Mass)"
+      },
+      "title": "Aero Platform Status",
+      "type": "splunk.singlevalue"
+    },
+    "viz_SeveritySummary": {
+      "context": {
+        "majorColorEditorConfig": [
+          {
+            "to": 1,
+            "value": "#118832"
+          },
+          {
+            "from": 1,
+            "value": "#d41f1f"
+          }
+        ]
+      },
+      "dataSources": {
+        "primary": "ds_SeveritySummary"
+      },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(majorColorEditorConfig)",
+        "majorColorMode": "list",
+        "underLabel": "Active RED alerts (last window)"
+      },
+      "title": "Integrity Severity (Active RED Alerts)",
+      "type": "splunk.singlevalue"
+    },
+    "viz_DynamicMass": {
+      "dataSources": {
+        "primary": "ds_DynamicMass"
+      },
+      "options": {
+        "majorColor": "> majorValue | rangeValue(massColorConfig)",
+        "massColorConfig": [
+          {
+            "to": 800,
+            "value": "#53A051"
+          },
+          {
+            "from": 800,
+            "to": 840,
+            "value": "#F8BE34"
+          },
+          {
+            "from": 840,
+            "value": "#DC4E41"
+          }
+        ],
+        "sparklineDisplay": "off",
+        "underLabel": "kg (768 min + fuel load)"
+      },
+      "title": "Car Mass \u2014 CAR1 (Dynamic)",
+      "type": "splunk.singlevalue"
+    },
+    "viz_SpeedTrace": {
+      "dataSources": {
+        "primary": "ds_SpeedTrace"
+      },
+      "options": {
+        "seriesColors": [
+          "#FF8000",
+          "#00A0FF"
+        ],
+        "xAxisTitleVisibility": "hide",
+        "yAxisTitleText": "Speed (KPH)"
+      },
+      "title": "Live Speed Telemetry (Head-to-Head)",
+      "type": "splunk.line"
+    },
+    "viz_FuelTrace": {
+      "dataSources": {
+        "primary": "ds_FuelTrace"
+      },
+      "options": {
+        "seriesColors": [
+          "#FF8000",
+          "#00A0FF"
+        ],
+        "xAxisTitleVisibility": "hide",
+        "yAxisTitleText": "Fuel Remaining (kg)"
+      },
+      "title": "Fuel Load Over Time (CAR1: Norris | CAR81: Piastri)",
+      "type": "splunk.line"
+    },
+    "viz_ThermalScatter": {
+      "dataSources": {
+        "primary": "ds_ThermalScatter"
+      },
+      "options": {
+        "seriesColors": [
+          "#DC4E41"
+        ],
+        "xAxisTitleText": "Engine Temp (\u00b0C)",
+        "yAxisTitleText": "Platform Compression (mm)"
+      },
+      "showLastUpdated": false,
+      "showProgressBar": false,
+      "title": "Transient Torque & Squat Correlation",
+      "type": "splunk.scatter"
+    },
+    "viz_EventStream": {
+      "context": {
+        "compliance_status_colors": [
+          {
+            "match": "CRITICAL: TORQUE_ANOMALY_CONFIRMED",
+            "value": "#DC4E41"
+          },
+          {
+            "match": "WARNING: TORQUE_ANOMALY_UNCONFIRMED",
+            "value": "#FF8000"
+          },
+          {
+            "match": "WARNING: ELEVATED_TEMP",
+            "value": "#FF8000"
+          },
+          {
+            "match": "VIOLATION_RISK",
+            "value": "#F8BE34"
+          },
+          {
+            "match": "LEGAL",
+            "value": "#53A051"
+          }
+        ]
+      },
+      "dataSources": {
+        "primary": "ds_EventStream"
+      },
+      "options": {
+        "count": 15,
+        "dataOverlayMode": "none",
+        "drilldown": "none",
+        "tableFormat": {
+          "rowBackgroundColors": "> table | seriesByName(\"compliance_status\") | matchValue(compliance_status_colors)"
+        }
+      },
+      "title": "Event Stream \u2014 Compliance Log (CAR1: Norris | CAR81: Piastri)",
+      "type": "splunk.table"
+    }
+  },
+  "dataSources": {
+    "ds_PlatformStatus": {
+      "name": "Platform Status \u2014 Current Peak Energy",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| stats latest(vertical_energy) as current_energy by car_id\n| stats max(current_energy) as majorValue\n| fillnull value=0 majorValue",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_SeveritySummary": {
+      "name": "Severity Summary Search",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| stats count(eval(if(compliance_status=\"CRITICAL: TORQUE_ANOMALY_CONFIRMED\", 1, null()))) as majorValue\n| fillnull value=0 majorValue",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_DynamicMass": {
+      "name": "Dynamic Mass \u2014 CAR1",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\" car_id=\"CAR1\"\n| stats latest(dynamic_mass_kg) as majorValue\n| fillnull value=768 majorValue",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_SpeedTrace": {
+      "name": "Speed Trace Search",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| timechart span=1s limit=0 useother=false avg(speed_kph) by car_id",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_FuelTrace": {
+      "name": "Fuel Load \u2014 Per Car",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| timechart span=2s limit=0 useother=false avg(fuel_load_kg) by car_id",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_EventStream": {
+      "name": "Event Stream Search",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| table _time, car_id, speed_kph, vertical_energy, dynamic_mass_kg, fuel_load_kg, engine_temp_c, compliance_status\n| sort - _time",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_ThermalCheck": {
+      "name": "Thermal Threat Scanner",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| stats max(engine_temp_c) as peak_temp max(vertical_energy) as peak_energy\n| where peak_temp > 130 AND peak_energy > 80",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    },
+    "ds_ThermalScatter": {
+      "name": "Thermal Scatter Search",
+      "options": {
+        "query": "index=\"project_apex\" sourcetype=\"mcl_telemetry\"\n| table engine_temp_c, rear_rh_mm",
+        "queryParameters": {
+          "earliest": "$time_token.earliest$",
+          "latest": "$time_token.latest$"
+        }
+      },
+      "type": "ds.search"
+    }
+  },
+  "layout": {
+    "globalInputs": [
+      "input_GlobalTime"
+    ],
+    "layoutDefinitions": {
+      "layout_1": {
+        "options": {
+          "height": 1260,
+          "width": 1440
+        },
+        "structure": [
+          {
+            "item": "viz_PlatformStatus",
+            "position": {
+              "h": 300,
+              "w": 360,
+              "x": 0,
+              "y": 0
+            },
+            "type": "block"
+          },
+          {
+            "item": "viz_SeveritySummary",
+            "position": {
+              "h": 300,
+              "w": 360,
+              "x": 360,
+              "y": 0
+            },
+            "type": "block"
+          },
+          {
+            "item": "viz_DynamicMass",
+            "position": {
+              "h": 300,
+              "w": 360,
+              "x": 720,
+              "y": 0
+            },
+            "type": "block"
+          },
+          {
+            "item": "viz_SpeedTrace",
+            "position": {
+              "h": 300,
+              "w": 360,
+              "x": 1080,
+              "y": 0
+            },
+            "type": "block"
+          },
+          {
+            "item": "viz_FuelTrace",
+            "position": {
+              "h": 330,
+              "w": 720,
+              "x": 0,
+              "y": 300
+            },
+            "type": "block"
+          },
+          {
+            "item": "viz_ThermalScatter",
+            "position": {
+              "h": 330,
+              "w": 720,
+              "x": 720,
+              "y": 300
+            },
+            "type": "block"
+          },
+          {
+            "item": "viz_EventStream",
+            "position": {
+              "h": 630,
+              "w": 1440,
+              "x": 0,
+              "y": 630
+            },
+            "type": "block"
+          }
+        ],
+        "type": "grid"
+      }
+    },
+    "tabs": {
+      "items": [
+        {
+          "label": "Mission Control",
+          "layoutId": "layout_1"
+        }
+      ]
+    }
+  }
 }
