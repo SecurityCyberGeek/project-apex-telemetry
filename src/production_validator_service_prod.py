@@ -59,6 +59,7 @@ import logging
 import urllib3
 import threading
 import queue
+import os
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ApexValidator")
