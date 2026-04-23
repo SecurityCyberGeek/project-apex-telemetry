@@ -16,12 +16,13 @@ import socket
 import struct
 import time
 import math
+import os
 
 UDP_IP    = "127.0.0.1"
 UDP_PORT  = 20777
 FREQUENCY = 60  # 60 Hz
 
-# PACKET FORMAT (v1.2) — must match production_validator_service_prod_2.py exactly.
+# PACKET FORMAT (v1.2) — must match production_validator_service_prod.py exactly.
 # Field order: timestamp(d), car_id(10s), speed_kph(f), ride_height_mm(f),
 #              vert_vel_ms(f), engine_temp_c(f), fuel_load_kg(f)
 PACKET_FORMAT = "<d10sfffff"  # 38 bytes
@@ -37,10 +38,13 @@ PACKET_FORMAT = "<d10sfffff"  # 38 bytes
 # Oscar (conservative): 100 kg / ~98.0 min → 0.017 kg/s base burn
 # During Lando torque anomaly: +0.004 kg/s (higher electrical deployment)
 
-FUEL_START_KG       = 100.0
-LANDO_BURN_BASE_KGS = 0.019    # kg/s base — ~87.7 min race
-OSCAR_BURN_KGS      = 0.017    # kg/s constant — ~98 min race
-ANOMALY_BURN_EXTRA  = 0.004    # kg/s added during Lando torque anomaly
+VALIDATOR_MAX_FUEL_LOAD_KG = 100.0
+DEFAULT_FUEL_START_KG        = 100.0
+LANDO_FUEL_START_KG          = float(os.getenv("LANDO_FUEL_START_KG", str(DEFAULT_FUEL_START_KG)))
+OSCAR_FUEL_START_KG          = float(os.getenv("OSCAR_FUEL_START_KG", str(DEFAULT_FUEL_START_KG)))
+LANDO_BURN_BASE_KGS          = 0.019    # kg/s base — ~87.7 min race
+OSCAR_BURN_KGS               = 0.017    # kg/s constant — ~98 min race
+ANOMALY_BURN_EXTRA           = 0.004    # kg/s added during Lando torque anomaly
 
 # FAST DEMO: uncomment these to burn through fuel in ~3–5 minutes
 # LANDO_BURN_BASE_KGS = 0.35
@@ -50,6 +54,7 @@ ANOMALY_BURN_EXTRA  = 0.004    # kg/s added during Lando torque anomaly
 print(f"[*] Project Apex: ATLAS Bridge v1.2 on {UDP_IP}:{UDP_PORT}")
 print("[*] Mode: HEAD-TO-HEAD SIMULATION (CAR1: Norris | CAR81: Piastri)")
 print(f"[*] Fuel model: per-car | CAR1={LANDO_BURN_BASE_KGS} kg/s | CAR81={OSCAR_BURN_KGS} kg/s")
+print(f"[*] Fuel start: CAR1={LANDO_FUEL_START_KG:.1f} kg | CAR81={OSCAR_FUEL_START_KG:.1f} kg")
 print(f"[*] Packet format: {PACKET_FORMAT} (38 bytes) — includes fuel_load_kg")
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -57,6 +62,15 @@ start_time = time.time()
 
 lando_temp        = 125.0
 oscar_temp        = 110.0
+
+
+def clamp_fuel_kg(value: float) -> float:
+    return max(0.0, min(value, VALIDATOR_MAX_FUEL_LOAD_KG))
+
+
+lando_fuel_start_kg = clamp_fuel_kg(LANDO_FUEL_START_KG)
+oscar_fuel_start_kg = clamp_fuel_kg(OSCAR_FUEL_START_KG)
+
 lando_fuel_burned = 0.0   # cumulative kg burned by Lando
 oscar_fuel_burned = 0.0   # cumulative kg burned by Oscar
 
@@ -86,8 +100,8 @@ try:
 
         # Per-car fuel burn — higher during Lando anomaly
         lando_burn_rate   = LANDO_BURN_BASE_KGS + (ANOMALY_BURN_EXTRA if torque_anomaly else 0.0)
-        lando_fuel_burned = min(FUEL_START_KG, lando_fuel_burned + lando_burn_rate * dt)
-        lando_fuel_kg     = max(0.0, FUEL_START_KG - lando_fuel_burned)
+        lando_fuel_burned = min(lando_fuel_start_kg, lando_fuel_burned + lando_burn_rate * dt)
+        lando_fuel_kg     = clamp_fuel_kg(lando_fuel_start_kg - lando_fuel_burned)
 
         # --- CAR 81: OSCAR PIASTRI (CONTROL CAR) ---
         if oscar_temp < 118.0:
@@ -97,8 +111,8 @@ try:
         oscar_rh_mm = 31.5 + (1.8 * math.cos(elapsed * 3.5))
         oscar_vz_ms = 0.12 * math.cos(elapsed * 12.0)
 
-        oscar_fuel_burned = min(FUEL_START_KG, oscar_fuel_burned + OSCAR_BURN_KGS * dt)
-        oscar_fuel_kg     = max(0.0, FUEL_START_KG - oscar_fuel_burned)
+        oscar_fuel_burned = min(oscar_fuel_start_kg, oscar_fuel_burned + OSCAR_BURN_KGS * dt)
+        oscar_fuel_kg     = clamp_fuel_kg(oscar_fuel_start_kg - oscar_fuel_burned)
 
         # --- PACKET GENERATION ---
         # FIELD ORDER must exactly match PACKET_FORMAT and validator unpacking:
