@@ -1,83 +1,98 @@
 # Project Apex – Agent Guidance
 
-## Project purpose
+## Project overview
 
-Project Apex is an independent, security-focused telemetry and compliance validation platform for the 2026 FIA Formula 1 regulations. It ingests race telemetry, computes physics-based features (e.g., vertical energy in joules, engine temperature, ride height, ERS deployment), and classifies events as GREEN, YELLOW, or RED for safety and compliance analysis.
-
-Project Apex is designed to stay aligned with FIA/F1 regulatory refinements, including the April 20, 2026 updates to energy management, Boost, MGU-K limits, low-power starts, and ERS deployment in wet conditions. [web:1708][web:1709][web:1713]
+Project Apex v1.2 is an edge validator for 2026 Formula 1 telemetry. It ingests UDP telemetry, computes physics features with a **dynamic mass model** (`car mass = 768 kg + fuel load`), and classifies each event into **GREEN / YELLOW / RED** severity states for safety and compliance monitoring.
 
 ## Core files
 
-- `production_validator_service_prod_2.py` – main validation and classification logic.
-- `production_atlas_bridge.py` – telemetry bridge/event generator.
-- `apex_mission_control_dashboard.json` – Splunk dashboard definition for Mission Control.
+- `src/production_validator_service_prod.py` – main dynamic-mass validator (v1.2).
+- `src/simulation/production_atlas_bridge.py` – telemetry simulator / ATLAS-style bridge.
+- `dashboards/apex_mission_control_dashboard.json` – Splunk Dashboard Studio definition.
 
-## Tech stack
+## Validator model and thresholds (v1.2)
 
-- Python 3.x for validator and tooling.
-- Splunk / SPL for dashboards and searches.
+### Dynamic mass and vertical energy
 
-## How to run tests
+The validator computes vertical energy using dynamic mass:
 
-Currently, no automated tests are committed. The project will use `pytest`.
+- `E = 0.5 * (CAR_MIN_MASS_KG + fuel_load_kg) * vz^2`
+- `CAR_MIN_MASS_KG = 768.0`
+- `MAX_FUEL_LOAD_KG = 100.0`
+- `fuel_load_kg` is clamped to `[0, 100]`
 
-Once tests exist:
+### Classification thresholds
 
-```bash
-pip install -r requirements.txt
-pip install pytest
-pytest
-```
+- `THERMAL_THRESHOLD_C = 130.0`
+- `ENERGY_LIMIT_J = 100.0`
+- `THERMAL_ENERGY_LIMIT_J = 80.0`
+- `AERO_STALL_RH_MM = 28.0`
 
-## Coding standards
+### Classification behavior
+
+- **GREEN** by default (within spec).
+- **YELLOW** for elevated thermal/energy risk states.
+- **RED** when thermal + energy + squat conditions confirm anomaly risk.
+
+## ERS constants (configuration only)
+
+The following ERS constants are defined as configuration values and should be treated as **not yet wired into severity logic**:
+
+- `ERS_MAX_RECHARGE_MJ = 7.0`
+- `ERS_DEPLOY_ACCEL_KW = 350.0`
+- `ERS_DEPLOY_NON_ACCEL_KW = 250.0`
+- `ERS_BOOST_CAP_KW = 150.0`
+- `ERS_SUPERCLIP_MAX_DURATION_S = 4.0`
+
+These values reflect the April 2026 FIA/FOM ERS refinements and are intended for an optional ERS compliance layer. They must not change existing GREEN/YELLOW/RED behavior unless explicitly requested.
+
+## Telemetry packet format expectations
+
+### Validator packet format (v1.2)
+
+Expected packet format:
+
+- `PACKET_FORMAT = "<d10sfffff"` (38 bytes)
+
+Field order:
+
+1. `timestamp` (`d`)
+2. `car_id` (`10s`)
+3. `speed_kph` (`f`)
+4. `ride_height_mm` (`f`)
+5. `vert_vel_ms` (`f`)
+6. `engine_temp_c` (`f`)
+7. `fuel_load_kg` (`f`)
+
+### Bridge alignment note
+
+Both the validator and the bridge now use the v1.2 packet format `<d10sfffff` with `fuel_load_kg` included. Future changes to the packet format must be applied in both files and covered by tests.
+
+## Coding standards for this repo
 
 - Prefer small, pure functions with clear inputs/outputs.
-- Do NOT add side effects (network calls, file writes) inside classification logic.
-- Use type hints for new or refactored functions.
-- Add structured logging where we emit anomaly classifications.
-- Preserve existing behavior unless explicitly instructed otherwise.
-- All FIA regulatory constants must be named and sourced with a comment citing the April 20, 2026 FIA/F1 refinement announcement.
+- Do not add hidden side effects (network calls, file writes, mutable global surprises) inside classification logic.
+- Use type hints for new or refactored code.
+- Preserve current behavior unless explicitly instructed to change it.
+- Keep logging structured and actionable when emitting anomaly/compliance events.
 
-## FIA regulatory constants (agreed April 20, 2026 – effective Miami GP)
+## Codex roadmap
 
-Source: FIA and F1 stakeholder statement on refinements to the 2026 regulations, published April 19–20, 2026. [web:1708][web:1709][web:1713]
+1. **Packet alignment + coverage**
+   - Align the bridge packet format with validator v1.2.
+   - Add tests around dynamic-mass classification behavior.
 
-| Constant Name                     | Value | Unit | Regulatory basis                                   |
-|-----------------------------------|-------|------|----------------------------------------------------|
-| ERS_MAX_RECHARGE_MJ              | 7.0   | MJ   | Reduced max permitted recharge (from 8 MJ)         |
-| ERS_DEPLOY_ACCEL_KW              | 350   | kW   | Peak MGU-K in key acceleration/overtaking zones    |
-| ERS_DEPLOY_NON_ACCEL_KW          | 250   | kW   | MGU-K limit in other parts of the lap              |
-| ERS_BOOST_CAP_KW                 | 150   | kW   | Max extra race Boost power (or car’s current power)|
-| ERS_SUPERCLIP_MAX_DURATION_S     | 4.0   | s    | Target maximum superclip duration per lap          |
+2. **Unit tests (pytest)**
+   - Add `pytest` tests for `classify_event` and vertical-energy computation.
+   - Include realistic boundary cases around all key thresholds.
 
-These constants are used by the validator for ERS compliance checks where ERS data is available. When ERS telemetry is absent, Apex falls back to v1.1 behavior.
+3. **CI automation**
+   - Add a GitHub Actions workflow that runs `pytest` on push and pull requests.
 
-## Existing v1.1 physics constants (do not change unless explicitly requested)
+4. **Optional ERS compliance layer**
+   - Introduce ERS compliance evaluation using `ERS_*` constants.
+   - Keep existing severity logic unchanged (ERS compliance reported separately).
 
-These constants encode the v1.1 safety thresholds used prior to the April 20, 2026 ERS refinements. [file:1444]
-
-| Constant Name          | Value | Unit | Purpose                                        |
-|------------------------|-------|------|------------------------------------------------|
-| THERMAL_THRESHOLD_C    | 130.0 | °C   | Engine temperature RED trigger                 |
-| ENERGY_LIMIT_J         | 100.0 | J    | Vertical energy YELLOW threshold               |
-| THERMAL_ENERGY_LIMIT_J | 80.0  | J    | Vertical energy RED threshold (with high temp) |
-| AERO_STALL_RH_MM       | 28.0  | mm   | Rear ride height squat RED threshold           |
-
-## Roadmap focus for Codex
-
-Short-term priorities for Codex and other agents working in this repo:
-
-1. **Tests and CI**
-   - Add a `pytest` test suite for `production_validator_service_prod_2.py`, covering all GREEN/YELLOW/RED branches and ERS compliance cases.
-   - Add a GitHub Actions CI workflow that runs tests on push/PR.
-
-2. **ERS support (backward-compatible)**
-   - Extend the validator to support optional ERS telemetry fields (`ers_deploy_kw`, `ers_recharge_mj`, `ers_superclip_duration_s`, `in_acceleration_zone`) without breaking current behavior.
-   - Use the FIA ERS constants above for compliance checks.
-
-3. **Refinement and logging**
-   - Refactor for clarity: type hints, docstrings, structured logging.
-   - Ensure anomaly classifications are logged with sufficient context (key inputs, thresholds crossed, and result).
-
-4. **Splunk integration**
-   - Generate helper scripts and documentation for Splunk dashboards, explaining how Apex fields (e.g., `apex_severity`, `ers_compliance`) map to panels and alerts.
+5. **Logging/docs/dashboard validation**
+   - Refine logging and developer documentation.
+   - Validate that the Splunk dashboard only references fields actually emitted by the validator.
