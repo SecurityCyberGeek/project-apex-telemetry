@@ -91,7 +91,7 @@ AERO_STALL_RH_MM       = 28.0    # Rear ride height stall-risk threshold
 # Source: FIA / FOM stakeholder agreement, April 19–20 2026
 # These constants are configured only in v1.2.
 # They do NOT alter GREEN/YELLOW/RED severity yet; ERS-aware logic will be
-# introduced in a future backward-compatible release.[web:1709][web:1708]
+# introduced in a future backward-compatible release.
 # ─────────────────────────────────────────────────────────────────────────────
 ERS_MAX_RECHARGE_MJ: float           = 7.0    # Max permitted recharge per lap (reduced from 8 MJ)
 ERS_DEPLOY_ACCEL_KW: float           = 350.0  # MGU-K in key acceleration/overtaking zones
@@ -102,6 +102,13 @@ ERS_SUPERCLIP_MAX_DURATION_S: float  = 4.0    # Target upper bound of superclip 
 # In future, optional ERS telemetry fields (ers_deploy_kw, ers_recharge_mj,
 # ers_superclip_duration_s, in_acceleration_zone) will be evaluated against
 # these constants, and logged as ERS compliance status, separate from severity.
+
+"""
+NOTE (v1.2 compatibility contract):
+    - ERS_* constants are configuration-only in v1.2 and are intentionally not wired into GREEN/YELLOW/RED severity classification.
+    - A future release may add an ERS compliance layer that runs in parallel with existing vertical-energy severity logic, without changing current behavior.
+    - Any ERS telemetry inputs must remain optional so older packet streams stay backward-compatible.
+"""
 
 PACKET_QUEUE = queue.Queue(maxsize=2048)
 http_session = requests.Session()
