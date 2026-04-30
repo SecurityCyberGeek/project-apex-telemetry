@@ -91,7 +91,7 @@ AERO_STALL_RH_MM       = 28.0    # Rear ride height stall-risk threshold
 # Source: FIA / FOM stakeholder agreement, April 19–20 2026
 # These constants are configured only in v1.2.
 # They do NOT alter GREEN/YELLOW/RED severity yet; ERS-aware logic will be
-# introduced in a future backward-compatible release.
+# introduced in a future backward-compatible release.[web:1709][web:1708]
 # ─────────────────────────────────────────────────────────────────────────────
 ERS_MAX_RECHARGE_MJ: float           = 7.0    # Max permitted recharge per lap (reduced from 8 MJ)
 ERS_DEPLOY_ACCEL_KW: float           = 350.0  # MGU-K in key acceleration/overtaking zones
@@ -103,12 +103,13 @@ ERS_SUPERCLIP_MAX_DURATION_S: float  = 4.0    # Target upper bound of superclip 
 # ers_superclip_duration_s, in_acceleration_zone) will be evaluated against
 # these constants, and logged as ERS compliance status, separate from severity.
 
-"""
-NOTE (v1.2 compatibility contract):
-    - ERS_* constants are configuration-only in v1.2 and are intentionally not wired into GREEN/YELLOW/RED severity classification.
-    - A future release may add an ERS compliance layer that runs in parallel with existing vertical-energy severity logic, without changing current behavior.
-    - Any ERS telemetry inputs must remain optional so older packet streams stay backward-compatible.
-"""
+# NOTE (v1.2 compatibility contract):
+# - ERS_* constants are configuration-only in v1.2 and are intentionally not
+#   wired into GREEN/YELLOW/RED severity classification.
+# - A future release may add an ERS compliance layer that runs in parallel with
+#   existing vertical-energy severity logic, without changing current behavior.
+# - Any ERS telemetry inputs must remain optional so older packet streams stay
+#   backward-compatible.
 
 PACKET_QUEUE = queue.Queue(maxsize=2048)
 http_session = requests.Session()
@@ -250,6 +251,22 @@ def processing_worker() -> None:
                 apex_message,
                 thermal_mode,
             ) = classify_event(engine_temp, energy_joules, ride_height)
+
+            logger.debug(
+                "classification_decision car_id=%s engine_temp_c=%.1f rear_rh_mm=%.2f "
+                "fuel_load_kg=%.2f dynamic_mass_kg=%.1f vertical_energy_j=%.2f "
+                "compliance_status=%s apex_severity=%s apex_status=%s thermal_mode=%s",
+                car_id,
+                engine_temp,
+                ride_height,
+                fuel_clamped,
+                dynamic_mass,
+                energy_joules,
+                compliance_status,
+                apex_severity,
+                apex_status,
+                thermal_mode,
+            )
 
             telemetry_event = {
                 "time":       timestamp,
