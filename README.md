@@ -5,6 +5,8 @@
 ![Stack](https://img.shields.io/badge/Tech-Python%20%7C%20Splunk%20HEC%20%7C%20UDP-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=for-the-badge)
 
+**UPDATES COMING SOON!**
+
 ## 🏁 What Is Project Apex?
 
 **Project Apex** is a real‑time physics validation and integrity monitoring service for F1‑style telemetry streams under the 2026 technical regulations.
